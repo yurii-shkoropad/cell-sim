@@ -1,5 +1,7 @@
 # CellSim: mobile cellular network simulator on OpenStreetMap
 
+**Live demo:** https://yurii-shkoropad.github.io/cell-sim/
+
 A browser-only simulator for 2G/4G/5G radio networks. You place and configure base stations on an
 OpenStreetMap map. The app computes coverage, best-server, SINR and throughput maps, then simulates
 users moving along real streets with voice and data sessions, cell selection, handovers, radio link
