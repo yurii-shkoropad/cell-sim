@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { destination } from '../geo';
+import { verticalFootprint } from '../radio/antenna';
 import type { RadioContext } from '../radio/cells';
 import type { SimEngine } from '../sim/engine';
 import type { RoadGraph } from '../sim/roads';
@@ -8,6 +9,8 @@ import type { Store } from '../state/store';
 import type { BaseStation } from '../types';
 
 const TECH_SHORT = { GSM: '2G', LTE: '4G', NR: '5G' } as const;
+/** Footprints whose upper beam edge never lands are drawn out to this range (dashed). */
+const FOOTPRINT_MAX_M = 6000;
 
 export class MapView {
   readonly map: L.Map;
@@ -162,6 +165,43 @@ export class MapView {
           pts.push([p.lat, p.lng]);
         }
         L.polygon(pts, style).addTo(this.sectorLayer);
+      }
+    }
+    const sel = this.store.station(this.store.selectedStationId);
+    if (sel) this.renderFootprint(sel, cellColor);
+  }
+
+  /**
+   * Ground footprint of each sector's vertical main beam for the selected station:
+   * the ring segment between where the −3 dB edges (tilt ± V-BW/2) reach UE height,
+   * plus a dashed arc where the boresight lands. Drawn in metres, so it scales with zoom.
+   */
+  private renderFootprint(bs: BaseStation, cellColor: Map<string, string>) {
+    const hm = this.store.scenario.settings.radio.ueHeightM;
+    const arc = (az: number, half: number, r: number) => {
+      const out: [number, number][] = [];
+      const n = Math.max(8, Math.ceil(half / 3));
+      for (let k = 0; k <= n; k++) {
+        const p = destination(bs.lat, bs.lng, az - half + (2 * half * k) / n, r);
+        out.push([p.lat, p.lng]);
+      }
+      return out;
+    };
+    for (const s of bs.sectors) {
+      if (!s.enabled || !bs.enabled) continue;
+      const fp = verticalFootprint(bs.heightM, hm, s.tilt, s.vBeamwidth);
+      const color = cellColor.get(s.id) ?? '#000';
+      const half = Math.min(s.hBeamwidth, 360) / 2;
+      const capped = !Number.isFinite(fp.far) || fp.far > FOOTPRINT_MAX_M;
+      const far = Math.min(fp.far, FOOTPRINT_MAX_M);
+      const near = Math.min(fp.near, far);
+      const outer = arc(s.azimuth, half, far);
+      const inner = near > 1 ? arc(s.azimuth, half, near).reverse() : [[bs.lat, bs.lng] as [number, number]];
+      L.polygon([...outer, ...inner], { pane: 'sectorPane', stroke: false, fillColor: color, fillOpacity: 0.18, interactive: false }).addTo(this.sectorLayer);
+      L.polyline(outer, { pane: 'sectorPane', color, weight: 2, opacity: 0.9, dashArray: capped ? '2 6' : undefined, interactive: false }).addTo(this.sectorLayer);
+      if (near > 1) L.polyline(inner, { pane: 'sectorPane', color, weight: 2, opacity: 0.9, interactive: false }).addTo(this.sectorLayer);
+      if (Number.isFinite(fp.peak) && fp.peak <= FOOTPRINT_MAX_M) {
+        L.polyline(arc(s.azimuth, half, fp.peak), { pane: 'sectorPane', color, weight: 1.5, opacity: 0.9, dashArray: '6 4', interactive: false }).addTo(this.sectorLayer);
       }
     }
   }

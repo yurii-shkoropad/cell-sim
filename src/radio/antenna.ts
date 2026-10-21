@@ -25,3 +25,19 @@ export function antennaAttenuation(
   const av = -Math.min(12 * ((elevation - tilt) / vBeamwidth) ** 2, SLA_V);
   return -Math.min(-(ah + av), frontToBack);
 }
+
+export interface VerticalFootprint {
+  /** Ground distance where the lower −3 dB edge (tilt + V-BW/2) reaches UE height, m. */
+  near: number;
+  /** Ground distance where the boresight (tilt) reaches UE height, m; Infinity if tilt ≤ 0. */
+  peak: number;
+  /** Ground distance where the upper −3 dB edge (tilt − V-BW/2) reaches UE height, m; Infinity if it never descends. */
+  far: number;
+}
+
+/** Where the vertical main beam lands: d = (h_b − h_m) / tan(angle below horizon). */
+export function verticalFootprint(hb: number, hm: number, tilt: number, vBeamwidth: number): VerticalFootprint {
+  const dh = Math.max(hb - hm, 0.1);
+  const at = (deg: number) => (deg <= 0 ? Infinity : deg >= 90 ? 0 : dh / Math.tan((deg * Math.PI) / 180));
+  return { near: at(tilt + vBeamwidth / 2), peak: at(tilt), far: at(tilt - vBeamwidth / 2) };
+}

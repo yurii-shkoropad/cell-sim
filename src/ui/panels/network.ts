@@ -1,9 +1,11 @@
 import { hexGrid, randomSites } from '../../planning/patterns';
 import { cellColor } from '../../radio/cells';
 import { channelNumber, gsmTrafficChannels, makeSector, makeStation, newId, PRESETS, presetByKey, resourceBlocks } from '../../radio/presets';
+import { verticalFootprint } from '../../radio/antenna';
 import { validity } from '../../radio/propagation';
 import type { BaseStation, Sector, Tech } from '../../types';
 import type { App } from '../app';
+import { beamProfile, fmtDist } from '../beamProfile';
 import { button, checkField, clear, colorField, fmt, h, numField, section, selectEl, selectField, textField, toast } from '../dom';
 
 const BW_OPTIONS: Record<Tech, number[]> = {
@@ -179,6 +181,7 @@ export function networkPanel(app: App): HTMLElement {
 
   // ---------------------------------------------------------------- editor
   let liveHost: HTMLElement | null = null;
+  let profileSector = 0;
   const renderEditor = () => {
     clear(editorHost);
     liveHost = null;
@@ -207,9 +210,39 @@ export function networkPanel(app: App): HTMLElement {
       for (const v of validity(s0?.freqMHz ?? 0, bs.heightM, store.scenario.settings.radio.ueHeightM, store.scenario.settings.radio.model)) derived.appendChild(h('div', { class: 'warn' }, '⚠ ' + v.message));
     };
     renderDerived();
+
+    const profileHost = h('div', { class: 'beam-profile' });
+    const renderProfile = () => {
+      clear(profileHost);
+      if (profileSector >= bs.sectors.length) profileSector = 0;
+      const ctx = app.ctx();
+      const color = (id: string) => ctx.cells.find((c) => c.sectorId === id)?.color ?? '#2a78d6';
+      const hm = store.scenario.settings.radio.ueHeightM;
+      const s = bs.sectors[profileSector];
+      const fp = verticalFootprint(bs.heightM, hm, s.tilt, s.vBeamwidth);
+      profileHost.append(
+        h('div', { class: 'bp-tabs' },
+          ...bs.sectors.map((x, i) =>
+            h('button', { type: 'button', class: `chip ${i === profileSector ? 'on' : ''}`, style: `--c:${color(x.id)}`, onclick: () => {
+              profileSector = i;
+              renderProfile();
+            } }, `S${i + 1}`),
+          ),
+        ),
+        beamProfile(bs, profileSector, hm, color(s.id)),
+        h('div', { class: 'hint' },
+          Number.isFinite(fp.peak)
+            ? `Boresight lands at ${fmtDist(fp.peak)}; −3 dB footprint ${fmtDist(fp.near)} – ${Number.isFinite(fp.far) ? fmtDist(fp.far) : 'horizon (upper edge never descends: overshoot risk)'}.`
+            : 'Boresight is at or above the horizon: no ground footprint peak. Increase tilt.',
+        ),
+      );
+    };
+    // The colours come from the rebuilt radio context, which lags the edit by a debounce.
     const ch = () => {
       changed();
       renderDerived();
+      renderProfile();
+      setTimeout(renderProfile, 120);
     };
 
     const applyPreset = (key: string) => {
@@ -309,6 +342,8 @@ export function networkPanel(app: App): HTMLElement {
             structural();
           }),
         ),
+        h('h4', null, 'Vertical beam (side view)'),
+        profileHost,
         h('h4', null, 'Live sector stats'),
         liveHost,
         h('div', { class: 'row' },
@@ -325,6 +360,7 @@ export function networkPanel(app: App): HTMLElement {
         ),
       ),
     );
+    renderProfile();
     renderLive();
   };
 

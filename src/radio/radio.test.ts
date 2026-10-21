@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultScenario } from '../state/defaults';
-import { antennaAttenuation } from './antenna';
+import { antennaAttenuation, verticalFootprint } from './antenna';
 import { buildRadioContext, rxLevel, sinrDb } from './cells';
 import { channelNumber, makeStation, powerUnits, presetByKey, resourceBlocks } from './presets';
 import { fspl, pathLoss, pathLossCoeffs } from './propagation';
@@ -46,6 +46,13 @@ describe('antenna pattern', () => {
   });
   it('is limited by front-to-back ratio behind the antenna', () => {
     expect(antennaAttenuation(180, 5, 65, 7, 5, 25)).toBeCloseTo(-25, 9);
+  });
+  it('vertical footprint: 30 m mast, 5° tilt, 7° V-BW', () => {
+    const f = verticalFootprint(31.5, 1.5, 5, 7);
+    expect(f.peak).toBeCloseTo(30 / Math.tan((5 * Math.PI) / 180), 6); // ≈ 343 m
+    expect(f.near).toBeCloseTo(30 / Math.tan((8.5 * Math.PI) / 180), 6); // ≈ 201 m
+    expect(f.far).toBeCloseTo(30 / Math.tan((1.5 * Math.PI) / 180), 6); // ≈ 1145 m
+    expect(verticalFootprint(30, 1.5, 3, 7).far).toBe(Infinity); // upper edge above horizon
   });
   it('omni ignores azimuth', () => {
     expect(antennaAttenuation(137, 5, 360, 7, 5, 25)).toBeCloseTo(0, 9);

@@ -205,3 +205,15 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
   #map { min-height: 50vh; }
   header { flex-wrap: wrap; height: auto; padding: 6px 12px; }
 }
+
+/* vertical beam side view */
+.beam-profile { background: var(--surface); border: 1px solid var(--surface-2); border-radius: 6px; padding: 6px 8px; }
+.bp-tabs { display: flex; gap: 4px; margin-bottom: 4px; }
+.beam-svg { width: 100%; height: auto; display: block; }
+.bp-ground { stroke: var(--text-2); stroke-width: 1.5; }
+.bp-ue { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.bp-mast { stroke: var(--text); stroke-width: 3; stroke-linecap: round; }
+.bp-tick { stroke: var(--text-2); stroke-width: 1; }
+.bp-title { font-size: 11px; font-weight: 600; fill: var(--text); }
+.bp-dist { font-size: 10px; fill: var(--text); font-variant-numeric: tabular-nums; }
+.bp-note { font-size: 9px; fill: var(--muted); }
