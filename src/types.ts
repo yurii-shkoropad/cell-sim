@@ -97,6 +97,8 @@ export interface FixedUser {
   traffic: TrafficMode;
   /** Data demand, Mbps; null = drawn at random per session. */
   demandMbps: number | null;
+  /** Phone receive antennas; null/missing = default for its device type. */
+  ueRx?: number | null;
 }
 
 export interface UserSettings {

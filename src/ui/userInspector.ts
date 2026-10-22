@@ -77,6 +77,7 @@ export class UserInspector {
       mobility: u.mode,
       traffic: u.traffic,
       demandMbps: u.demandMbps,
+      ueRx: u.ueRxOverride,
     } satisfies Partial<FixedUser>);
     this.app.store.emit('users');
   }
@@ -146,6 +147,14 @@ export class UserInspector {
         after();
       })),
       row('Supports', techBoxes),
+      row('Phone Rx antennas', selectEl(
+        [['auto', `Auto (${engine.defaultUeRx(u)}, device default)`], ['1', '1'], ['2', '2'], ['4', '4'], ['8', '8']] as [string, string][],
+        () => (u.ueRxOverride === null ? 'auto' : String(u.ueRxOverride)),
+        (v) => {
+          engine.setUeRx(u, v === 'auto' ? null : +v);
+          after();
+        },
+      )),
       row('Mobility', selectEl(MOBILITY, () => u.mode, (v) => {
         engine.setMobility(u, v);
         after();
@@ -177,7 +186,7 @@ export class UserInspector {
         u.fixedId
           ? ''
           : button('Keep as fixed user', () => {
-              const f: FixedUser = { id: newId('fu'), name: `UE${u.id}`, lat: u.lat, lng: u.lng, operatorId: store.scenario.operators[u.opIdx]?.id ?? '', techs: techsOf(u.techMask), mobility: u.mode, traffic: u.traffic, demandMbps: u.demandMbps };
+              const f: FixedUser = { id: newId('fu'), name: `UE${u.id}`, lat: u.lat, lng: u.lng, operatorId: store.scenario.operators[u.opIdx]?.id ?? '', techs: techsOf(u.techMask), mobility: u.mode, traffic: u.traffic, demandMbps: u.demandMbps, ueRx: u.ueRxOverride };
               (store.scenario.fixedUsers ??= []).push(f);
               u.fixedId = f.id;
               u.name = f.name;
@@ -236,7 +245,7 @@ export class UserInspector {
       h('div', { class: 'kv-grid' },
         kv('State', state),
         kv('Mobility', u.mode === 'static' ? 'static' : `${u.mode === 'walk' ? 'pedestrian' : 'vehicle'}, ${Math.round(u.speed * 3.6)} km/h${u.dragging ? ' (dragging)' : ''}`),
-        kv('Device RATs', techsOf(u.techMask).join(' / ')),
+        kv('Device', `${techsOf(u.techMask).join(' / ')} · ${engine.ueRx(u)} Rx antenna${engine.ueRx(u) > 1 ? 's' : ''}${u.ueRxOverride === null ? '' : ' (set)'}`),
         kv('Position', `${u.lat.toFixed(5)}, ${u.lng.toFixed(5)}`),
         kv('Serving cell', c ? `${c.name} · ${c.tech} · PCI ${c.pci} · ${c.freqMHz} MHz` : '—'),
         kv(c?.tech === 'GSM' ? 'RxLev' : 'RSRP', c ? `${fmt(u.rx)} dBm` : '—', c && th && u.rx < th.minRxDbm + 6 ? 'bad' : ''),

@@ -102,4 +102,19 @@ describe('SimEngine', () => {
     for (const x of eng.users) if (x.session && x.serving >= 0) active[x.serving]++;
     eng.cells.forEach((c, i) => expect(c.active).toBe(active[i]));
   });
+
+  it('per-phone Rx antennas override the device default and change the link rank', () => {
+    const eng = makeEngine();
+    eng.step();
+    const u = eng.users.find((x) => x.techMask & 2 && !(x.techMask & 4) && !x.fixedId)!; // LTE-only phone
+    expect(eng.ueRx(u)).toBe(2);
+    eng.moveUserTo(u, 49.8361, 24.0142, false); // close to the central site: high SINR
+    eng.startSessionNow(u, 'data');
+    const r2 = u.rank;
+    eng.setUeRx(u, 4);
+    expect(eng.ueRx(u)).toBe(4);
+    expect(u.rank).toBeGreaterThanOrEqual(r2);
+    eng.setUeRx(u, null);
+    expect(eng.ueRx(u)).toBe(2);
+  });
 });

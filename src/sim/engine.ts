@@ -38,6 +38,8 @@ export interface SimUser {
   traffic: TrafficMode;
   /** Fixed data demand, Mbps; null = random per session. */
   demandMbps: number | null;
+  /** Receive antennas set for this phone; null = default for its device type. */
+  ueRxOverride: number | null;
   speed: number;
   /** Being dragged on the map: mobility is suspended. */
   dragging: boolean;
@@ -235,6 +237,7 @@ export class SimEngine {
         mode,
         traffic: 'random',
         demandMbps: null,
+        ueRxOverride: null,
         speed: this.randSpeed(mode),
         dragging: false,
         x: 0,
@@ -446,10 +449,20 @@ export class SimEngine {
 
   // ---------------------------------------------------------------- capacity
 
-  /** UE receive antennas, from its best supported RAT. */
-  ueRx(u: SimUser): number {
+  /** Default receive antennas for the device type (its best supported RAT). */
+  defaultUeRx(u: SimUser): number {
     const us = this.settings.users;
     return u.techMask & TECH_BIT.NR ? us.ueRxNr : u.techMask & TECH_BIT.LTE ? us.ueRxLte : 1;
+  }
+
+  /** UE receive antennas: the per-phone setting, else the device-type default. */
+  ueRx(u: SimUser): number {
+    return u.ueRxOverride ?? this.defaultUeRx(u);
+  }
+
+  setUeRx(u: SimUser, n: number | null) {
+    u.ueRxOverride = n === null ? null : Math.max(1, Math.round(n));
+    this.refreshUser(u);
   }
 
   private canAdmit(i: number, kind: SessionKind, u: SimUser): boolean {
@@ -719,6 +732,7 @@ export class SimEngine {
     u.name = f.name;
     u.traffic = f.traffic;
     u.demandMbps = f.demandMbps;
+    u.ueRxOverride = f.ueRx ?? null;
     if (f.traffic === 'voice') u.nextVoice = this.t;
     if (f.traffic === 'data') u.nextData = this.t;
     this.users.push(u);
