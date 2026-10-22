@@ -238,7 +238,11 @@ export class HeatmapLayer {
     const parts = [`${level} ${rs > -Infinity ? rs.toFixed(1) + ' dBm' : '—'}`];
     if (cell) {
       parts.push(`SINR ${r.sinr[k].toFixed(1)} dB`, `${cell.name} (${cell.tech}, PCI ${cell.pci})`);
-      if (cell.tech !== 'GSM') parts.push(`peak ${r.thr[k].toFixed(1)} Mbps`);
+      if (cell.tech !== 'GSM') {
+        // The map assumes a typical phone, not any particular user (see Users → Rx antennas).
+        const us = this.store.scenario.settings.users;
+        parts.push(`peak ${r.thr[k].toFixed(1)} Mbps (${cell.tech === 'NR' ? us.ueRxNr : us.ueRxLte}Rx UE)`);
+      }
     } else parts.push('no service');
     this.readout.textContent = parts.join(' · ');
     this.readout.style.display = '';
