@@ -33,7 +33,8 @@ For example, `cellsim.engine.step()`, `cellsim.engine.counters`, `cellsim.engine
 ## What you can configure
 
 **Per base station:** technology (GSM/LTE/NR), template (GSM900/1800, LTE B20/B3/B1/B7, NR n78/n28),
-bandwidth, antenna / MIMO type (SISO, 2×2, 4×4, 8T8R, massive MIMO 32T32R / 64T64R), transmit power,
+bandwidth, antenna / MIMO type (SISO, 2×2, 4×4, 8T8R, massive MIMO 32T32R / 64T64R), max modulation
+(QPSK … 256QAM, 1024QAM for NR), transmit power,
 antenna height, feeder loss, TRX count (GSM), maximum active users, position, and on-air state.
 
 **Per sector:** azimuth, horizontal and vertical beamwidth, tilt, gain, front-to-back ratio, carrier
@@ -57,7 +58,7 @@ per-RAT mobility thresholds (min level, A3 offset, hysteresis, TTT, B2, Qout, T3
 
 ## Outputs
 
-- **Map layers:** signal level (RSRP or RxLev), best server, SINR, and peak DL throughput. Each can
+- **Map layers:** signal level (RSRP or RxLev), best server, SINR, peak DL throughput, and modulation reached. Each can
   be filtered by operator and RAT, with a hover readout. Further overlays show sectors, users
   (coloured by state), user-to-cell links and the road graph.
 - **KPI tiles:** coverage, handover success, ping-pong, drop rate, block rate, mean and cell-edge
@@ -81,6 +82,7 @@ The **Models** tab in the app has the full formulas. In short:
 | Shadowing | Log-normal truncated at ±3σ, spatially correlated (lattice at the decorrelation distance, per site) |
 | SINR | Wideband, spectrum-overlap weighted, load weighted; thermal noise is kTB + NF |
 | Throughput | Truncated Shannon (3GPP TR 36.942) per layer, per-RB rate × RBs |
+| Modulation | Per-station max (QPSK/16/64/256/1024QAM) caps per-layer SE at the 3GPP CQI table maxima |
 | Antennas / MIMO | SISO, 2T2R, 4T4R, 8T8R, massive MIMO 32T32R/64T64R: beamforming gain, rank adaptation (power split, Rx combining, precoding gain), MU-MIMO pairing |
 | Scheduler | GBR voice first, then max-min fair water-filling for data; GSM uses TCH timeslots (8·TRX − 2) |
 | Mobility | Idle selection by RAT priority; A3 intra-RAT and B2 inter-RAT handover with TTT; RLF via Qout + T310 |

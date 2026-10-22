@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { LocalProjection } from '../geo';
-import { peakRateMbps, rxLevel, sinrDb, type RadioContext } from '../radio/cells';
+import { linkModulation, linkRank, rxLevel, sinrDb, type RadioContext } from '../radio/cells';
+import { modulationIndex } from '../radio/modulation';
 import type { RadioSettings, Tech } from '../types';
 
 export interface HeatmapRequest {
@@ -27,6 +28,8 @@ export interface HeatmapResult {
   server: Int16Array;
   sinr: Float32Array;
   thr: Float32Array;
+  /** Index into MODULATIONS reached by a typical UE, -1 = none. */
+  mod: Int8Array;
   ms: number;
 }
 
@@ -42,6 +45,7 @@ self.onmessage = (e: MessageEvent<HeatmapRequest>) => {
   const server = new Int16Array(n).fill(-1);
   const sinr = new Float32Array(n).fill(-Infinity);
   const thr = new Float32Array(n);
+  const mod = new Int8Array(n).fill(-1);
   const levels = new Float64Array(C);
   const eligible = ctx.cells.map((c) => (op < 0 || c.operatorIdx === op) && (!tech || c.tech === tech));
   const xs = new Float64Array(cols);
@@ -68,9 +72,12 @@ self.onmessage = (e: MessageEvent<HeatmapRequest>) => {
       server[k] = best;
       const s = sinrDb(ctx, levels, best, loads);
       sinr[k] = s;
-      thr[k] = peakRateMbps(ctx.cells[best], s, radio, ueRx[ctx.cells[best].tech]);
+      const cell = ctx.cells[best];
+      const link = linkRank(cell, s, ueRx[cell.tech], radio);
+      thr[k] = (link.se * cell.rbBwHz * (1 - radio.overhead) * cell.rbs) / 1e6;
+      mod[k] = modulationIndex(linkModulation(cell, link));
     }
   }
-  const res: HeatmapResult = { gen: e.data.gen, cols, rows, rsrp, server, sinr, thr, ms: performance.now() - t0 };
-  (self as unknown as Worker).postMessage(res, [rsrp.buffer, server.buffer, sinr.buffer, thr.buffer]);
+  const res: HeatmapResult = { gen: e.data.gen, cols, rows, rsrp, server, sinr, thr, mod, ms: performance.now() - t0 };
+  (self as unknown as Worker).postMessage(res, [rsrp.buffer, server.buffer, sinr.buffer, thr.buffer, mod.buffer]);
 };

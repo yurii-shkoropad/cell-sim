@@ -56,6 +56,8 @@ export interface BaseStation {
   trxCount: number;
   /** Antenna / MIMO configuration (see radio/mimo.ts); missing = SISO for older files. */
   antennaType?: string;
+  /** Highest downlink modulation (see radio/modulation.ts); missing = 64QAM LTE / 256QAM NR. */
+  maxModulation?: string;
   /** Admission limit on simultaneously connected (active) users per sector. */
   maxUsers: number;
   sectors: Sector[];
@@ -139,9 +141,6 @@ export interface RadioSettings {
   /** Shannon attenuation factor (3GPP TR 36.942). */
   shannonAlpha: number;
   sinrMinDb: number;
-  /** Max spectral efficiency (bps/Hz) per tech. */
-  seMaxLte: number;
-  seMaxNr: number;
   /** Control / reference-signal overhead fraction removed from PRB capacity. */
   overhead: number;
   /** GSM adjacent channel rejection, dB. */

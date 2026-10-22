@@ -2,6 +2,7 @@ import { LocalProjection } from '../geo';
 import type { RadioSettings, Scenario, Tech } from '../types';
 import { antennaAttenuation } from './antenna';
 import { antennaType, bestRank, validAntennaFor, type RankChoice } from './mimo';
+import { modulation, modulationForSe, validModulationFor, type Modulation, type ModulationKey } from './modulation';
 import { MIN_DISTANCE_KM, pathLossCoeffs } from './propagation';
 import { gsmTrafficChannels, occupiedBandwidthMHz, powerUnits, rbBandwidthHz, resourceBlocks } from './presets';
 import { seedFromString, shadowingDb } from './shadowing';
@@ -54,6 +55,9 @@ export interface CellRF {
   codebook: boolean;
   bfGainDb: number;
   maxMu: number;
+  /** Highest modulation and its per-layer spectral-efficiency cap. */
+  modulation: ModulationKey;
+  seMax: number;
 }
 
 export interface RadioContext {
@@ -130,6 +134,10 @@ export function buildRadioContext(scn: Scenario): RadioContext {
         ...(() => {
           const a = antennaType(validAntennaFor(bs.tech, bs.antennaType));
           return { ports: a.ports, maxLayers: a.maxLayers, codebook: a.codebook, bfGainDb: a.bfGainDb, maxMu: a.maxMu };
+        })(),
+        ...(() => {
+          const m = modulation(validModulationFor(bs.tech, bs.maxModulation));
+          return { modulation: m.key, seMax: m.seMax };
         })(),
       });
     });
@@ -211,17 +219,19 @@ export function sinrDb(ctx: RadioContext, levels: Float64Array | Float32Array, i
   return 10 * Math.log10(sMw / (iMw + dbmToMw(v.noiseDbm)));
 }
 
-/** Spectral efficiency of one layer, bps/Hz (attenuated, truncated Shannon, 3GPP TR 36.942 A.2). */
-export function spectralEfficiency(sinr: number, tech: Tech, r: RadioSettings): number {
-  if (tech === 'GSM' || sinr < r.sinrMinDb) return 0;
-  const se = r.shannonAlpha * Math.log2(1 + Math.pow(10, sinr / 10));
-  return Math.min(se, tech === 'NR' ? r.seMaxNr : r.seMaxLte);
-}
-
-/** Rank-adapted MIMO link to a UE with `ueRx` receive antennas. */
+/**
+ * Rank-adapted MIMO link to a UE with `ueRx` receive antennas. Per-layer spectral
+ * efficiency is truncated Shannon (TR 36.942), capped by the cell's max modulation.
+ */
 export function linkRank(c: CellRF, sinr: number, ueRx: number, r: RadioSettings): RankChoice {
   if (c.tech === 'GSM') return { rank: 1, se: 0, layerSinrDb: sinr };
-  return bestRank(sinr, c, ueRx, c.tech === 'NR' ? r.seMaxNr : r.seMaxLte, r);
+  return bestRank(sinr, c, ueRx, c.seMax, r);
+}
+
+/** Modulation the UE's layers run at, or null when the link carries nothing. */
+export function linkModulation(c: CellRF, link: RankChoice): Modulation | null {
+  if (c.tech === 'GSM') return modulation('gmsk');
+  return modulationForSe(link.se / link.rank, c.modulation);
 }
 
 /** Achievable rate on one resource block (all layers), Mbps. */

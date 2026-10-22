@@ -236,6 +236,7 @@ export function radioPanel(app: App): HTMLElement {
         }, { min: 0, max: 60, unit: 'dB' }),
       ),
       section('Throughput (truncated Shannon)',
+        h('p', { class: 'hint' }, 'The per-layer efficiency cap comes from each station’s max modulation (Network → station editor).'),
         numField('Attenuation α', () => r.shannonAlpha, (v) => {
           r.shannonAlpha = v;
           set();
@@ -244,14 +245,6 @@ export function radioPanel(app: App): HTMLElement {
           r.sinrMinDb = v;
           set();
         }, { min: -20, max: 10, step: 0.5, unit: 'dB' }),
-        numField('LTE max SE', () => r.seMaxLte, (v) => {
-          r.seMaxLte = v;
-          set();
-        }, { min: 0.5, max: 15, step: 0.1, unit: 'b/s/Hz' }),
-        numField('NR max SE', () => r.seMaxNr, (v) => {
-          r.seMaxNr = v;
-          set();
-        }, { min: 0.5, max: 15, step: 0.1, unit: 'b/s/Hz' }),
         numField('Overhead', () => r.overhead, (v) => {
           r.overhead = v;
           set();
@@ -333,7 +326,7 @@ export function layersPanel(app: App): HTMLElement {
     };
     root.append(
       section('Coverage heatmap',
-        selectField('Layer', [['none', 'Off'], ['rsrp', 'Signal level (RSRP / RxLev)'], ['server', 'Best server'], ['sinr', 'SINR / C/(I+N)'], ['throughput', 'Peak DL throughput']], () => l.heatmap, (v) => {
+        selectField('Layer', [['none', 'Off'], ['rsrp', 'Signal level (RSRP / RxLev)'], ['server', 'Best server'], ['sinr', 'SINR / C/(I+N)'], ['throughput', 'Peak DL throughput'], ['modulation', 'Modulation reached']], () => l.heatmap, (v) => {
           l.heatmap = v;
           changed(true);
           app.mapView.renderSectors();

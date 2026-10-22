@@ -1,6 +1,7 @@
 import { hexGrid, randomSites } from '../../planning/patterns';
 import { cellColor } from '../../radio/cells';
 import { antennaType, antennaTypesFor, bestRank, validAntennaFor } from '../../radio/mimo';
+import { modulation, modulationsFor, validModulationFor } from '../../radio/modulation';
 import { channelNumber, gsmTrafficChannels, makeSector, makeStation, newId, PRESETS, presetByKey, rbBandwidthHz, resourceBlocks } from '../../radio/presets';
 import { verticalFootprint } from '../../radio/antenna';
 import { validity } from '../../radio/propagation';
@@ -210,10 +211,15 @@ export function networkPanel(app: App): HTMLElement {
         // Single-UE peak at excellent radio conditions, for orientation.
         const r = store.scenario.settings.radio;
         const ueRx = bs.tech === 'NR' ? store.scenario.settings.users.ueRxNr : store.scenario.settings.users.ueRxLte;
-        const best = bestRank(30, ant, ueRx, bs.tech === 'NR' ? r.seMaxNr : r.seMaxLte, r);
+        const mod = modulation(validModulationFor(bs.tech, bs.maxModulation));
+        const best = bestRank(30, ant, ueRx, mod.seMax, r);
         const peak = (best.se * rbBandwidthHz(bs.tech, f) * (1 - r.overhead) * rb) / 1e6;
+        // Absolute ceiling: every layer at the modulation's top efficiency.
+        const layers = Math.min(ant.maxLayers, ant.ports, ueRx);
+        const ceiling = (layers * mod.seMax * rbBandwidthHz(bs.tech, f) * (1 - r.overhead) * rb) / 1e6;
         lines.push(`${ant.label}: up to ${Math.min(ant.maxLayers, ant.ports)} layers${ant.maxMu > 1 ? `, MU-MIMO up to ${ant.maxMu} users/RB` : ''}`);
-        lines.push(`Peak DL ≈ ${fmt(peak, 0)} Mbps (one ${ueRx}Rx UE, ${best.rank} layers @ 30 dB SINR)`);
+        lines.push(`${mod.label}: ≤ ${mod.seMax.toFixed(2)} b/s/Hz per layer (${mod.bitsPerSymbol} bits/symbol)`);
+        lines.push(`Peak DL ≈ ${fmt(peak, 0)} Mbps @ 30 dB SINR, ceiling ${fmt(ceiling, 0)} Mbps (one ${ueRx}Rx UE, ${layers} layers)`);
       }
       const ch = s0 ? channelNumber(bs.tech, s0.freqMHz) : null;
       if (ch) lines.push(`${ch.label} ${ch.value} (sector 1)`);
@@ -258,7 +264,7 @@ export function networkPanel(app: App): HTMLElement {
 
     const applyPreset = (key: string) => {
       const p = presetByKey(key);
-      Object.assign(bs, { tech: p.tech, band: p.band, bandwidthMHz: p.bandwidthMHz, txPowerDbm: p.txPowerDbm, heightM: p.heightM, trxCount: p.trxCount, maxUsers: p.maxUsers, antennaType: p.antennaType });
+      Object.assign(bs, { tech: p.tech, band: p.band, bandwidthMHz: p.bandwidthMHz, txPowerDbm: p.txPowerDbm, heightM: p.heightM, trxCount: p.trxCount, maxUsers: p.maxUsers, antennaType: p.antennaType, maxModulation: p.modulation });
       bs.sectors.forEach((s) => Object.assign(s, { freqMHz: p.freqMHz, gain: s.hBeamwidth >= 360 ? Math.max(p.gain - 7, 2) : p.gain, vBeamwidth: p.vBeamwidth, tilt: p.tilt, frontToBack: p.frontToBack, hBeamwidth: s.hBeamwidth >= 360 ? 360 : p.hBeamwidth }));
       structural();
     };
@@ -286,6 +292,7 @@ export function networkPanel(app: App): HTMLElement {
           if (v === 'GSM') bs.bandwidthMHz = 0.2;
           else if (!BW_OPTIONS[v].includes(bs.bandwidthMHz)) bs.bandwidthMHz = v === 'LTE' ? 20 : 100;
           bs.antennaType = validAntennaFor(v, bs.antennaType);
+          bs.maxModulation = validModulationFor(v, bs.maxModulation);
           structural();
         }),
         h('label', { class: 'field', title: antennaType(validAntennaFor(bs.tech, bs.antennaType)).note },
@@ -294,6 +301,17 @@ export function networkPanel(app: App): HTMLElement {
             bs.antennaType = v;
             structural();
           })),
+        ),
+        h('label', { class: 'field', title: 'Highest downlink modulation the cell uses; caps the spectral efficiency per layer. Users only reach it at high SINR.' },
+          h('span', { class: 'lbl' }, 'Max modulation'),
+          h('span', { class: 'ctl' }, (() => {
+            const sel = selectEl(modulationsFor(bs.tech).map((m) => [m.key, m.label] as [string, string]), () => validModulationFor(bs.tech, bs.maxModulation), (v) => {
+              bs.maxModulation = v;
+              ch();
+            });
+            sel.disabled = bs.tech === 'GSM';
+            return sel;
+          })()),
         ),
         textField('Band label', () => bs.band, (v) => {
           bs.band = v;

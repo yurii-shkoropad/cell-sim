@@ -19,8 +19,6 @@ export function defaultSettings(): Settings {
       minInterfererLoad: 0.15,
       shannonAlpha: 0.6,
       sinrMinDb: -10,
-      seMaxLte: 4.4,
-      seMaxNr: 7.4,
       overhead: 0.25,
       gsmAdjacentRejectionDb: 18,
       precodingEfficiency: 0.5,

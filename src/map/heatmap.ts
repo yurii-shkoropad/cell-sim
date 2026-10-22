@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import type { RadioContext } from '../radio/cells';
 import type { HeatmapKind, Store } from '../state/store';
+import { MODULATIONS } from '../radio/modulation';
 import { colorAt, cssGradient, parseColor, RSRP_SCALE, RXLEV_SCALE, SINR_SCALE, THR_SCALE, type Scale } from './colors';
 import type { HeatmapRequest, HeatmapResult } from './heatmap.worker';
 
@@ -140,6 +141,7 @@ export class HeatmapLayer {
     const px = img.data;
     const scale = this.scale(kind);
     const cellRgb = this.ctx ? this.ctx.cells.map((c) => parseColor(c.color)) : [];
+    const modRgb = MODULATIONS.map((m) => parseColor(m.color));
     for (let k = 0; k < r.cols * r.rows; k++) {
       const srv = r.server[k];
       let rgb: [number, number, number] | null = null;
@@ -150,6 +152,7 @@ export class HeatmapLayer {
         if (kind === 'server') rgb = cellRgb[srv] ?? null;
         else if (kind === 'sinr') rgb = colorAt(scale!, r.sinr[k]);
         else if (kind === 'throughput') rgb = r.thr[k] > 0 ? colorAt(scale!, r.thr[k]) : null;
+        else if (kind === 'modulation') rgb = r.mod[k] >= 0 ? modRgb[r.mod[k]] : null;
       }
       if (!rgb) continue;
       const o = k * 4;
@@ -190,7 +193,11 @@ export class HeatmapLayer {
     const head = document.createElement('div');
     head.className = 'legend-title';
     const scale = this.scale(kind);
-    head.textContent = kind === 'server' ? `Best server · ${op} · ${tech}` : `${scale!.title} (${scale!.unit}) · ${op} · ${tech}`;
+    const us = this.store.scenario.settings.users;
+    head.textContent =
+      kind === 'server' ? `Best server · ${op} · ${tech}`
+      : kind === 'modulation' ? `Modulation reached · ${op} · ${tech} (${us.ueRxLte}Rx LTE / ${us.ueRxNr}Rx NR UE)`
+      : `${scale!.title} (${scale!.unit}) · ${op} · ${tech}`;
     el.appendChild(head);
     if (scale) {
       const bar = document.createElement('div');
@@ -209,6 +216,21 @@ export class HeatmapLayer {
         ticks.appendChild(s);
       }
       el.appendChild(ticks);
+    } else if (kind === 'modulation') {
+      const row = document.createElement('div');
+      row.className = 'legend-cats';
+      for (const m of MODULATIONS) {
+        const s = document.createElement('span');
+        const i = document.createElement('i');
+        i.style.background = m.color;
+        s.append(i, m.key === 'gmsk' ? 'GMSK' : m.label);
+        row.appendChild(s);
+      }
+      el.appendChild(row);
+      const note = document.createElement('div');
+      note.className = 'legend-note';
+      note.textContent = 'Per-layer modulation at the chosen MIMO rank, capped by each station’s max modulation.';
+      el.appendChild(note);
     } else {
       const note = document.createElement('div');
       note.className = 'legend-note';
@@ -241,7 +263,8 @@ export class HeatmapLayer {
       if (cell.tech !== 'GSM') {
         // The map assumes a typical phone, not any particular user (see Users → Rx antennas).
         const us = this.store.scenario.settings.users;
-        parts.push(`peak ${r.thr[k].toFixed(1)} Mbps (${cell.tech === 'NR' ? us.ueRxNr : us.ueRxLte}Rx UE)`);
+        const m = r.mod[k] >= 0 ? MODULATIONS[r.mod[k]].label : '—';
+        parts.push(`${m} · peak ${r.thr[k].toFixed(1)} Mbps (${cell.tech === 'NR' ? us.ueRxNr : us.ueRxLte}Rx UE)`);
       }
     } else parts.push('no service');
     this.readout.textContent = parts.join(' · ');

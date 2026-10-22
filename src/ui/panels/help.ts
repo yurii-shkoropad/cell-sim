@@ -26,12 +26,15 @@ const HTML = `
 <p><code>SINR = S / (Σ<sub>j</sub> P<sub>j</sub>·η<sub>j</sub>·ρ<sub>j</sub> + N)</code>, where S and P<sub>j</sub> are wideband received powers. η<sub>j</sub> is the fraction of interferer j's spectrum overlapping the victim carrier (all operators count; GSM adjacent channels are attenuated by the adjacent-channel rejection). ρ<sub>j</sub> is the interferer load (simulated PRB utilisation with a floor, or 100%). <code>N = −174 + 10·log₁₀(B) + NF</code>.</p>
 
 <h4>5. Throughput</h4>
-<p>Truncated Shannon (3GPP TR 36.942): <code>SE = 0</code> when SINR &lt; SINR<sub>min</sub>, otherwise <code>min(α·log₂(1+SINR), SE<sub>max</sub>)</code>. Rate per RB = <code>SE · B<sub>RB</sub> · (1 − overhead)</code>. The "peak" heatmap gives one user all RBs. GSM data is modelled as GPRS CS-2 at 13.4 kbit/s per timeslot.</p>
+<p>Truncated Shannon (3GPP TR 36.942): <code>SE = 0</code> when SINR &lt; SINR<sub>min</sub>, otherwise <code>min(α·log₂(1+SINR), SE<sub>max</sub>)</code>, with SE<sub>max</sub> set by the station's max modulation (see 5c). Rate per RB = <code>SE · B<sub>RB</sub> · (1 − overhead)</code>. The "peak" heatmap gives one user all RBs. GSM data is modelled as GPRS CS-2 at 13.4 kbit/s per timeslot.</p>
 
 <h4>5b. Antennas & MIMO</h4>
 <p>Each station has an antenna configuration: SISO, 2T2R, 4T4R, 8T8R beamforming, or massive MIMO 32T32R / 64T64R. Beamforming types add a static array gain to the whole link (+3 / +6 / +7.5 dB), so they extend coverage. A UE receives r ≤ min(ports, UE Rx antennas, 4) layers, and <b>rank adaptation</b> picks the r that maximises <code>r · SE(SINR<sub>layer</sub>(r))</code>, where</p>
 <p><code>SINR<sub>layer</sub>(r) = SINR − 10·log₁₀ r + 10·log₁₀(N<sub>rx</sub> − r + 1) [+ η<sub>pc</sub>·10·log₁₀(N<sub>tx</sub>/r) for codebook 2T/4T]</code></p>
 <p>The terms are the power split across layers, the receive-combining gain (ZF/MMSE diversity order) and the transmit precoding gain. SE<sub>max</sub> applies per layer. At the cell edge users fall back to 1 layer; near the site they use 2–4. <b>MU-MIMO</b> (8T8R and massive MIMO) co-schedules up to 2 / 4 / 8 data users on the same RBs, multiplying the data RB pool by <code>1 + (min(n, N<sub>MU</sub>) − 1)·η<sub>MU</sub></code>. Interference rejection by the receiver is not modelled.</p>
+
+<h4>5c. Modulation</h4>
+<p>Each LTE/NR station has a <b>max modulation</b>: QPSK, 16QAM, 64QAM, 256QAM, or 1024QAM (NR only). It caps the spectral efficiency per layer at the top entry of the 3GPP CQI tables: 1.18 / 2.73 / 5.55 / 7.41 / 9.26 b/s/Hz (TS 36.213, 38.214). The modulation a UE actually uses is the lowest order whose top efficiency covers its per-layer Shannon efficiency, so high orders are reached only at high SINR. GSM uses GMSK. Missing values default to 64QAM (LTE) or 256QAM (NR).</p>
 
 <h4>6. Capacity & scheduling</h4>
 <ul>

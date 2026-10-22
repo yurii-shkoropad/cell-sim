@@ -247,3 +247,6 @@ table.meas tr.cand td { color: #b26a00; }
 .user-inspector .field { grid-template-columns: 1fr 1.3fr; }
 .user-inspector details > summary { margin: 10px 0 4px; }
 .user-inspector details > summary h4 { margin: 0; }
+
+.legend-cats { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 2px 0 4px; }
+.legend-cats i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }

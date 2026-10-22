@@ -1,5 +1,6 @@
 import L from 'leaflet';
-import { linkRank, peakRateMbps } from '../radio/cells';
+import { linkModulation, linkRank, peakRateMbps } from '../radio/cells';
+import { modulation } from '../radio/modulation';
 import { newId } from '../radio/presets';
 import { techMaskOf, techsOf, type SimUser } from '../sim/engine';
 import { EVENT_COLOR, EVENT_LABEL } from '../sim/kpi';
@@ -254,6 +255,11 @@ export class UserInspector {
           const ant = `${c.ports}T`;
           const lk = linkRank(c, u.sinr, engine.ueRx(u), store.scenario.settings.radio);
           return `${lk.rank} layer${lk.rank > 1 ? 's' : ''} (cell ${ant}${c.maxLayers > 1 ? `, max ${Math.min(c.maxLayers, c.ports)}` : ''}${c.bfGainDb ? `, BF +${c.bfGainDb} dB` : ''} · UE ${engine.ueRx(u)}Rx)`;
+        })() : '—'),
+        kv('Modulation', c ? (() => {
+          const m = linkModulation(c, linkRank(c, u.sinr, engine.ueRx(u), store.scenario.settings.radio));
+          const cap = c.tech === 'GSM' ? '' : ` (cell max ${modulation(c.modulation).label})`;
+          return `${m ? m.label : 'none (SINR too low)'}${cap}`;
         })() : '—'),
         kv('Peak here', c && c.tech !== 'GSM' ? `${fmt(peakRateMbps(c, u.sinr, store.scenario.settings.radio, engine.ueRx(u)), 1)} Mbps (alone in the cell)` : '—'),
         kv('Throughput', s?.kind === 'data' ? `${fmt(u.thrMbps, 2)} of ${fmt(s.demandMbps, 2)} Mbps` : s ? `${fmt(u.thrMbps * 1000, 0)} kbps (GBR)` : '—'),

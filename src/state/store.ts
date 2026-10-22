@@ -1,7 +1,7 @@
 import type { BaseStation, Scenario, Settings, Tech } from '../types';
 import { defaultScenario, defaultSettings } from './defaults';
 
-export type HeatmapKind = 'none' | 'rsrp' | 'server' | 'sinr' | 'throughput';
+export type HeatmapKind = 'none' | 'rsrp' | 'server' | 'sinr' | 'throughput' | 'modulation';
 
 export interface LayerState {
   heatmap: HeatmapKind;
