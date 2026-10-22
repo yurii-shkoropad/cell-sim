@@ -7,6 +7,8 @@
  * and renormalised by the weight norm, so every point has unit variance while
  * correlation falls to ~0 at one decorrelation distance.
  *
+ * The normal variate is truncated at ±3σ.
+ *
  * Because the field is deterministic in (site, x, y), the heatmap and the
  * moving users always see the same shadowing.
  */
@@ -41,8 +43,13 @@ export function shadowingDb(seed: number, x: number, y: number, sigmaDb: number,
   const v =
     w00 * gaussAt(seed, i, j) + w10 * gaussAt(seed, i + 1, j) + w01 * gaussAt(seed, i, j + 1) + w11 * gaussAt(seed, i + 1, j + 1);
   const norm = Math.sqrt(w00 * w00 + w10 * w10 + w01 * w01 + w11 * w11);
-  return (sigmaDb * v) / norm;
+  // Truncated at ±3σ: untruncated tails produce unphysical ±30 dB spots next to a mast.
+  const z = v / norm;
+  return sigmaDb * (z > SHADOW_TRUNCATION ? SHADOW_TRUNCATION : z < -SHADOW_TRUNCATION ? -SHADOW_TRUNCATION : z);
 }
+
+/** Shadowing is clipped to ±this many standard deviations. */
+export const SHADOW_TRUNCATION = 3;
 
 /** Stable 32-bit seed from a string id. */
 export function seedFromString(s: string): number {

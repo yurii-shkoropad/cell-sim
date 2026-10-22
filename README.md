@@ -78,7 +78,7 @@ The **Models** tab in the app has the full formulas. In short:
 |---|---|
 | Path loss | Okumura-Hata (≤1500 MHz) / COST-231 Hata (>1500 MHz), with environment corrections and a free-space floor |
 | Antenna | 3GPP TR 36.814 parabolic horizontal and vertical pattern, with tilt and front-to-back limit |
-| Shadowing | Log-normal, spatially correlated (lattice at the decorrelation distance, per site) |
+| Shadowing | Log-normal truncated at ±3σ, spatially correlated (lattice at the decorrelation distance, per site) |
 | SINR | Wideband, spectrum-overlap weighted, load weighted; thermal noise is kTB + NF |
 | Throughput | Truncated Shannon (3GPP TR 36.942), per-RB rate × RBs |
 | Scheduler | GBR voice first, then max-min fair water-filling for data; GSM uses TCH timeslots (8·TRX − 2) |

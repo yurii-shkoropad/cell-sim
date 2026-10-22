@@ -1,4 +1,3 @@
-import L from 'leaflet';
 import { HeatmapLayer } from './map/heatmap';
 import { MapView } from './map/mapView';
 import { buildRadioContext, type RadioContext } from './radio/cells';
@@ -10,6 +9,7 @@ import './styles.css';
 import type { App } from './ui/app';
 import { button, h, selectEl, toast } from './ui/dom';
 import { fmtTime, kpiPanel } from './ui/kpiPanel';
+import { UserInspector } from './ui/userInspector';
 import { dataPanel, planningPanel } from './ui/panels/data';
 import { helpPanel } from './ui/panels/help';
 import { networkPanel } from './ui/panels/network';
@@ -74,6 +74,7 @@ const app: App = {
   roads: () => roads,
   loadRoads,
   respawnUsers: () => resetSim(),
+  openUser: (id) => inspector.open(id),
   onLiveTick: (fn) => liveFns.push(fn),
 };
 
@@ -103,20 +104,16 @@ mapView.onStationMoved = () => {
   store.emit('network');
   store.emit('selection');
 };
-mapView.onUserClick = (id) => {
-  const u = engine.users.find((x) => x.id === id);
+const inspector = new UserInspector(app);
+mapView.onUserClick = (id) => inspector.open(id);
+mapView.onUserDrag = (id, lat, lng, final) => {
+  const u = engine.userById(id);
   if (!u) return;
-  const c = u.serving >= 0 ? ctx.cells[u.serving] : null;
-  const op = store.scenario.operators[u.opIdx];
-  const caps = ['GSM', u.techMask & 2 ? 'LTE' : '', u.techMask & 4 ? 'NR' : ''].filter(Boolean).join('/');
-  L.popup()
-    .setLatLng([u.lat, u.lng])
-    .setContent(
-      `<b>UE${u.id}</b> · ${op?.name ?? '?'} · ${caps}<br>${u.mode === 'walk' ? 'Pedestrian' : 'Vehicle'} ${(u.speed * 3.6).toFixed(0)} km/h<br>` +
-        (c ? `Serving <b>${c.name}</b> (${c.tech}, PCI ${c.pci})<br>Level ${u.rx.toFixed(1)} dBm · SINR ${u.sinr.toFixed(1)} dB<br>` : 'No service<br>') +
-        (u.session ? `${u.session.kind} session, ${u.thrMbps.toFixed(2)} Mbps` : 'Idle'),
-    )
-    .openOn(mapView.map);
+  engine.moveUserTo(u, lat, lng, final);
+  if (final) {
+    inspector.dropped(u);
+    mapView.renderUsers(engine);
+  }
 };
 
 // ---------------------------------------------------------------- tabs
@@ -172,6 +169,8 @@ function setRunning(on: boolean) {
 }
 
 function resetSim() {
+  // User ids are reassigned on respawn, so the inspector's selection is no longer valid.
+  inspector.close();
   engine.reset();
   mapView.renderUsers(engine);
   liveTick();

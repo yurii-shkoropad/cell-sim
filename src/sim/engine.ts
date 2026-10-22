@@ -1,11 +1,15 @@
 import { LocalProjection } from '../geo';
 import { GSM_SLOT_MBPS, ratePerRbMbps, rxLevel, sinrDb, type RadioContext } from '../radio/cells';
-import type { Scenario, Settings, Tech } from '../types';
+import type { FixedUser, Mobility, Scenario, Settings, Tech, TrafficMode } from '../types';
 import { EventLog, emptyCounters, percentile, type KpiCounters, type KpiSample, type SimEventType } from './kpi';
 import { route, type Bounds, type RoadGraph, type TravelMode } from './roads';
 
 const TECH_BIT: Record<Tech, number> = { GSM: 1, LTE: 2, NR: 4 };
 const TECH_LIST: Tech[] = ['GSM', 'LTE', 'NR'];
+export const techMaskOf = (techs: Tech[]) => techs.reduce((m, t) => m | TECH_BIT[t], 0) || TECH_BIT.GSM;
+export const techsOf = (mask: number) => TECH_LIST.filter((t) => mask & TECH_BIT[t]);
+/** Retry delay for continuous-traffic users after a block / drop, s. */
+const CONTINUOUS_RETRY_S = { block: 5, drop: 2 };
 /** VoLTE/VoNR guaranteed bit rate incl. header overhead, Mbps. */
 const VOICE_GBR_MBPS = 0.03;
 /** Fraction of RBs available to GBR admission. */
@@ -24,10 +28,18 @@ export interface Session {
 
 export interface SimUser {
   id: number;
+  /** Set for users placed manually and persisted in the scenario. */
+  fixedId: string | null;
+  name: string | null;
   opIdx: number;
   techMask: number;
-  mode: TravelMode;
+  mode: Mobility;
+  traffic: TrafficMode;
+  /** Fixed data demand, Mbps; null = random per session. */
+  demandMbps: number | null;
   speed: number;
+  /** Being dragged on the map: mobility is suspended. */
+  dragging: boolean;
   x: number;
   y: number;
   lat: number;
@@ -86,6 +98,7 @@ const cellKey = (ctx: RadioContext, i: number) => `${ctx.cells[i].bsId}/${ctx.ce
 export class SimEngine {
   ctx!: RadioContext;
   settings!: Settings;
+  scn!: Scenario;
   proj!: LocalProjection;
   graph: RoadGraph | null = null;
   area: Bounds;
@@ -116,6 +129,7 @@ export class SimEngine {
   setScenario(scn: Scenario, ctx: RadioContext) {
     const old = this.ctx;
     this.settings = scn.settings;
+    this.scn = scn;
     this.opShares = scn.operators.map((o) => Math.max(0, o.marketShare));
     this.proj = new LocalProjection(ctx.lat0, ctx.lng0);
     this.ctx = ctx;
@@ -185,21 +199,39 @@ export class SimEngine {
 
   opShares: number[] = [1];
 
+  private nextUserId = 0;
+
   spawnUsers() {
     const us = this.settings.users;
     this.users = [];
-    for (let id = 0; id < us.count; id++) {
-      const mode: TravelMode = this.rng() < us.pedestrianShare ? 'walk' : 'drive';
+    this.nextUserId = 0;
+    for (let k = 0; k < us.count; k++) {
+      const mode: Mobility = this.rng() < us.staticShare ? 'static' : this.rng() < us.pedestrianShare ? 'walk' : 'drive';
       let techMask = TECH_BIT.GSM;
       const r = this.rng();
       if (r < us.lteCapableShare) techMask |= TECH_BIT.LTE;
       if (r < us.nrCapableShare) techMask |= TECH_BIT.NR;
-      const u: SimUser = {
-        id,
-        opIdx: this.pickOperator(),
+      const u = this.newUser(this.pickOperator(), techMask, mode);
+      this.placeAtRandom(u);
+      this.users.push(u);
+    }
+    for (const f of this.scn.fixedUsers ?? []) this.addFixedUser(f);
+    this.recountOccupancy();
+  }
+
+  private newUser(opIdx: number, techMask: number, mode: Mobility): SimUser {
+    const us = this.settings.users;
+    return {
+        id: this.nextUserId++,
+        fixedId: null,
+        name: null,
+        opIdx,
         techMask,
         mode,
+        traffic: 'random',
+        demandMbps: null,
         speed: this.randSpeed(mode),
+        dragging: false,
         x: 0,
         y: 0,
         lat: 0,
@@ -223,14 +255,11 @@ export class SimEngine {
         prevCellKey: null,
         lastHoT: -1e9,
       };
-      this.placeAtRandom(u);
-      this.users.push(u);
-    }
-    this.recountOccupancy();
   }
 
-  private randSpeed(mode: TravelMode) {
+  private randSpeed(mode: Mobility) {
     const us = this.settings.users;
+    if (mode === 'static') return 0;
     return mode === 'walk' ? us.pedSpeedMin + this.rng() * (us.pedSpeedMax - us.pedSpeedMin) : us.vehSpeedMin + this.rng() * (us.vehSpeedMax - us.vehSpeedMin);
   }
 
@@ -244,7 +273,8 @@ export class SimEngine {
 
   private placeAtRandom(u: SimUser) {
     const g = this.graph;
-    if (g) {
+    // Static users can be anywhere (indoors); moving ones start on the road network.
+    if (g && u.mode !== 'static') {
       const pool = (this.effectiveMode(u) === 'walk' ? g.walk : g.drive).pool;
       if (pool.length) {
         const n = pool[Math.floor(this.rng() * pool.length)];
@@ -290,7 +320,8 @@ export class SimEngine {
       if (p && p.length > 1) {
         u.path = p;
         u.pathIdx = 1;
-        u.speed = this.randSpeed(u.mode);
+        // Fixed users keep the speed they were given.
+        if (!u.fixedId) u.speed = this.randSpeed(u.mode);
         return;
       }
     }
@@ -299,7 +330,7 @@ export class SimEngine {
   }
 
   private move(u: SimUser, dt: number) {
-    if (this.t < u.dwellUntil) return;
+    if (u.mode === 'static' || u.dragging || this.t < u.dwellUntil) return;
     let dist = u.speed * dt;
     const g = this.graph;
     if (g && u.path) {
@@ -473,18 +504,19 @@ export class SimEngine {
     if (u.serving >= 0) this.cells[u.serving].drops++;
     this.counters.dropped++;
     this.emit('DROP', u, `${u.session!.kind} dropped: ${reason}`, u.serving);
-    this.endSession(u);
+    this.endSession(u, CONTINUOUS_RETRY_S.drop);
   }
 
-  private endSession(u: SimUser) {
+  /** Clear the session and schedule the next arrival (continuous users retry after `retryS`). */
+  private endSession(u: SimUser, retryS = 0) {
     const us = this.settings.users;
     u.session = null;
     u.thrMbps = 0;
     u.rlfTimerMs = 0;
     u.hoCand = -1;
     u.hoTimerMs = 0;
-    u.nextVoice = this.t + this.expo(3600 / Math.max(us.voiceCallsPerHour, 1e-6));
-    u.nextData = this.t + this.expo(3600 / Math.max(us.dataSessionsPerHour, 1e-6));
+    u.nextVoice = u.traffic === 'voice' ? this.t + retryS : this.t + this.expo(3600 / Math.max(us.voiceCallsPerHour, 1e-6));
+    u.nextData = u.traffic === 'data' ? this.t + retryS : this.t + this.expo(3600 / Math.max(us.dataSessionsPerHour, 1e-6));
   }
 
   private tryHandover(u: SimUser, target: number, irat: boolean) {
@@ -540,22 +572,15 @@ export class SimEngine {
       const servLvl = u.serving >= 0 ? this.level(u.serving, u.x, u.y) : -Infinity;
 
       if (!u.session) {
-        // ---- idle mode: cell (re)selection
-        const pick = this.selectCell(best, lvl);
-        if (pick < 0) {
-          this.setServing(u, -1);
-        } else if (u.serving < 0 || servLvl < th[this.ctx.cells[u.serving].tech].minRxDbm) {
-          this.setServing(u, pick);
-        } else if (pick !== u.serving) {
-          const st = this.ctx.cells[u.serving].tech;
-          const pt = this.ctx.cells[pick].tech;
-          if (th[pt].priority > th[st].priority || lvl[pt] > servLvl + RESELECT_HYST_DB) this.setServing(u, pick);
-        }
-        u.rx = u.serving >= 0 ? this.level(u.serving, u.x, u.y) : -Infinity;
-        u.sinr = u.serving >= 0 ? this.sinrAt(u.serving, u.x, u.y) : -Infinity;
+        this.idleSelect(u, best, lvl, servLvl);
 
         // ---- session arrivals
-        const kind: SessionKind | null = this.t >= u.nextVoice ? 'voice' : this.t >= u.nextData ? 'data' : null;
+        const tr = u.traffic;
+        const kind: SessionKind | null =
+          tr === 'idle' ? null
+          : (tr === 'random' || tr === 'voice') && this.t >= u.nextVoice ? 'voice'
+          : (tr === 'random' || tr === 'data') && this.t >= u.nextData ? 'data'
+          : null;
         if (kind) this.startSession(u, kind);
         continue;
       }
@@ -621,29 +646,195 @@ export class SimEngine {
     }
   }
 
+  /** Idle-mode cell (re)selection, then refresh the UE's level and SINR. */
+  private idleSelect(u: SimUser, best: Record<Tech, number>, lvl: Record<Tech, number>, servLvl: number) {
+    const th = this.settings.thresholds;
+    const pick = this.selectCell(best, lvl);
+    if (pick < 0) {
+      this.setServing(u, -1);
+    } else if (u.serving < 0 || servLvl < th[this.ctx.cells[u.serving].tech].minRxDbm) {
+      this.setServing(u, pick);
+    } else if (pick !== u.serving) {
+      const st = this.ctx.cells[u.serving].tech;
+      const pt = this.ctx.cells[pick].tech;
+      if (th[pt].priority > th[st].priority || lvl[pt] > servLvl + RESELECT_HYST_DB) this.setServing(u, pick);
+    }
+    u.rx = u.serving >= 0 ? this.level(u.serving, u.x, u.y) : -Infinity;
+    u.sinr = u.serving >= 0 ? this.sinrAt(u.serving, u.x, u.y) : -Infinity;
+  }
+
   private startSession(u: SimUser, kind: SessionKind) {
     const us = this.settings.users;
-    const dur = this.expo(kind === 'voice' ? us.voiceMeanDurationS : us.dataMeanDurationS);
-    const demand = kind === 'voice' ? VOICE_GBR_MBPS : this.expo(us.dataMeanDemandMbps);
+    const continuous = u.traffic === kind;
+    const dur = continuous ? Infinity : this.expo(kind === 'voice' ? us.voiceMeanDurationS : us.dataMeanDurationS);
+    const demand = kind === 'voice' ? VOICE_GBR_MBPS : (u.demandMbps ?? this.expo(us.dataMeanDemandMbps));
     if (kind === 'voice') this.counters.voiceStarted++;
     else this.counters.dataStarted++;
     if (u.serving < 0) {
       this.counters.blockedCoverage++;
       this.emit('BLOCK', u, `${kind} blocked: no coverage`);
-      this.endSession(u);
+      this.endSession(u, CONTINUOUS_RETRY_S.block);
       return;
     }
     if (!this.canAdmit(u.serving, kind, u)) {
       this.counters.blockedCapacity++;
       this.cells[u.serving].blocks++;
       this.emit('BLOCK', u, `${kind} blocked: ${this.ctx.cells[u.serving].tech === 'GSM' ? 'no free TCH' : 'admission control'}`, u.serving);
-      this.endSession(u);
+      this.endSession(u, CONTINUOUS_RETRY_S.block);
       return;
     }
     u.session = { kind, start: this.t, end: this.t + Math.max(dur, 2), demandMbps: demand };
     u.rlfTimerMs = 0;
     this.attach(u.serving);
     this.emit('CALL_START', u, kind === 'voice' ? 'voice call' : `data, demand ${demand.toFixed(2)} Mbps`, u.serving);
+  }
+
+  // ---------------------------------------------------------------- manual control (inspector / drag)
+
+  userById(id: number): SimUser | undefined {
+    return this.users.find((u) => u.id === id);
+  }
+
+  opIndex(operatorId: string): number {
+    return Math.max(0, this.scn.operators.findIndex((o) => o.id === operatorId));
+  }
+
+  /** Add a manually placed user (from the scenario's fixed users). */
+  addFixedUser(f: FixedUser): SimUser {
+    const u = this.newUser(this.opIndex(f.operatorId), techMaskOf(f.techs), f.mobility);
+    u.fixedId = f.id;
+    u.name = f.name;
+    u.traffic = f.traffic;
+    u.demandMbps = f.demandMbps;
+    if (f.traffic === 'voice') u.nextVoice = this.t;
+    if (f.traffic === 'data') u.nextData = this.t;
+    this.users.push(u);
+    this.moveUserTo(u, f.lat, f.lng, true);
+    return u;
+  }
+
+  removeUser(id: number) {
+    const u = this.userById(id);
+    if (!u) return;
+    this.detach(u);
+    this.users = this.users.filter((x) => x !== u);
+    this.recountOccupancy();
+  }
+
+  /**
+   * Move a user to a position. While dragging (`final` false) it stays exactly under
+   * the cursor; on drop, walking/driving users snap to the nearest road node and start
+   * a new trip from there, static users stay where they were dropped.
+   */
+  moveUserTo(u: SimUser, lat: number, lng: number, final: boolean) {
+    const p = this.proj.toXY(lat, lng);
+    u.x = p.x;
+    u.y = p.y;
+    u.dragging = !final;
+    if (final && u.mode !== 'static') {
+      const g = this.graph;
+      const pool = g ? (this.effectiveMode(u) === 'walk' ? g.walk : g.drive).pool : null;
+      if (g && pool && pool.length) {
+        let best = pool[0];
+        let bd = Infinity;
+        for (const n of pool) {
+          const d = (g.x[n] - p.x) ** 2 + (g.y[n] - p.y) ** 2;
+          if (d < bd) [bd, best] = [d, n];
+        }
+        u.x = g.x[best];
+        u.y = g.y[best];
+        u.path = [best];
+        u.pathIdx = 1;
+        u.dwellUntil = 0;
+        this.newTrip(u);
+      } else {
+        const w = this.randomPointInArea();
+        u.wx = w.x;
+        u.wy = w.y;
+      }
+    }
+    this.syncLatLng(u);
+    this.refreshUser(u);
+  }
+
+  setMobility(u: SimUser, mode: Mobility) {
+    if (u.mode === mode) return;
+    u.mode = mode;
+    u.speed = this.randSpeed(mode);
+    u.path = null;
+    if (mode !== 'static') this.moveUserTo(u, u.lat, u.lng, true);
+  }
+
+  setTraffic(u: SimUser, traffic: TrafficMode) {
+    u.traffic = traffic;
+    if (u.session) {
+      // A continuous session of another kind (or switching to random/idle) ends normally.
+      const us = this.settings.users;
+      if (traffic !== u.session.kind && u.session.end === Infinity) {
+        u.session.end = traffic === 'random' ? this.t + this.expo(u.session.kind === 'voice' ? us.voiceMeanDurationS : us.dataMeanDurationS) : this.t;
+      }
+      if (traffic === u.session.kind) u.session.end = Infinity;
+    }
+    if (traffic === 'voice') u.nextVoice = this.t;
+    if (traffic === 'data') u.nextData = this.t;
+  }
+
+  setOperator(u: SimUser, opIdx: number) {
+    if (u.opIdx === opIdx) return;
+    this.endSessionNow(u, 'operator changed', true);
+    u.opIdx = opIdx;
+    this.setServing(u, -1);
+    this.refreshUser(u);
+  }
+
+  setTechMask(u: SimUser, mask: number) {
+    u.techMask = mask || TECH_BIT.GSM;
+    if (u.serving >= 0 && !(TECH_BIT[this.ctx.cells[u.serving].tech] & u.techMask)) {
+      this.endSessionNow(u, 'RAT not supported', true);
+      this.setServing(u, -1);
+    }
+    this.refreshUser(u);
+  }
+
+  startSessionNow(u: SimUser, kind: SessionKind) {
+    if (u.session) this.endSessionNow(u, 'replaced', true);
+    this.refreshUser(u);
+    this.startSession(u, kind);
+    this.schedule();
+  }
+
+  /**
+   * End the UE's session now. Ending a continuous session by hand switches the UE to
+   * random traffic (otherwise it would re-dial at once); `keepTraffic` keeps it continuous.
+   */
+  endSessionNow(u: SimUser, reason = 'ended manually', keepTraffic = false) {
+    if (!u.session) return;
+    this.emit('CALL_END', u, `${u.session.kind} ${reason}`, u.serving);
+    this.detach(u);
+    if (!keepTraffic && (u.traffic === 'voice' || u.traffic === 'data')) u.traffic = 'random';
+    this.endSession(u, CONTINUOUS_RETRY_S.drop);
+  }
+
+  /** Re-measure one UE at its current position without advancing time (for drag / inspector). */
+  refreshUser(u: SimUser) {
+    this.stepId = (this.stepId + 1) >>> 0 || 1;
+    const { best, lvl } = this.bestPerTech(u);
+    const servLvl = u.serving >= 0 ? this.level(u.serving, u.x, u.y) : -Infinity;
+    if (!u.session) this.idleSelect(u, best, lvl, servLvl);
+    else if (u.serving >= 0) {
+      u.rx = servLvl;
+      u.sinr = this.sinrAt(u.serving, u.x, u.y);
+    }
+    this.schedule();
+  }
+
+  /** The UE's measurements of every cell it may use, strongest first. */
+  measurements(u: SimUser): { cell: number; level: number }[] {
+    this.stepId = (this.stepId + 1) >>> 0 || 1;
+    return this.candidateCells(u)
+      .map((i) => ({ cell: i, level: this.level(i, u.x, u.y) }))
+      .filter((m) => m.level > -Infinity)
+      .sort((a, b) => b.level - a.level);
   }
 
   /** Resource allocation: GBR voice first, then max-min fair water-filling for data. */

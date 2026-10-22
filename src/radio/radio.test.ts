@@ -69,6 +69,7 @@ describe('shadowing', () => {
     expect(sd).toBeGreaterThan(7);
     expect(sd).toBeLessThan(9);
     expect(shadowingDb(42, 10, 20, 8, 50)).toBe(shadowingDb(42, 10, 20, 8, 50));
+    expect(Math.max(...vals.map(Math.abs))).toBeLessThanOrEqual(24 + 1e-9); // truncated at 3 sigma
   });
 });
 

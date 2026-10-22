@@ -53,4 +53,53 @@ describe('SimEngine', () => {
     for (const u of eng.users) expect(u.serving).toBeLessThan(eng.ctx.cells.length);
     for (let i = 0; i < 200; i++) eng.step();
   });
+
+  it('static users never move; fixed users spawn at their position with continuous traffic', () => {
+    const eng = makeEngine((s) => {
+      s.settings.users.count = 60;
+      s.settings.users.staticShare = 0.5;
+    });
+    const statics = eng.users.filter((u) => u.mode === 'static' && !u.fixedId).map((u) => ({ u, x: u.x, y: u.y }));
+    expect(statics.length).toBeGreaterThan(10);
+    const probe = eng.users.find((u) => u.fixedId === 'fu-main')!;
+    expect(probe).toBeDefined();
+    expect(probe.lat).toBeCloseTo(49.8352, 6);
+    for (let i = 0; i < 600; i++) eng.step();
+    for (const { u, x, y } of statics) expect([u.x, u.y]).toEqual([x, y]);
+    // Continuous data: in session (or re-dialling after a drop) and never with a finite end.
+    expect(probe.session?.kind).toBe('data');
+    expect(probe.session?.end).toBe(Infinity);
+    expect(probe.session?.demandMbps).toBe(10);
+  });
+
+  it('dragging moves a user and re-measures it without advancing time', () => {
+    const eng = makeEngine();
+    const u = eng.users.find((x) => x.mode === 'walk')!;
+    const t = eng.t;
+    eng.moveUserTo(u, 49.8356, 24.0142, false);
+    expect(u.dragging).toBe(true);
+    expect(u.lat).toBeCloseTo(49.8356, 6);
+    expect(u.serving).toBeGreaterThanOrEqual(0);
+    eng.step();
+    expect(u.lat).toBeCloseTo(49.8356, 6); // frozen while dragged
+    eng.moveUserTo(u, 49.8356, 24.0142, true);
+    expect(u.dragging).toBe(false);
+    expect(eng.t).toBeCloseTo(t + eng.settings.sim.stepMs / 1000, 9);
+  });
+
+  it('manual session control and removal keep occupancy consistent', () => {
+    const eng = makeEngine();
+    const u = eng.users.find((x) => x.serving >= 0 && !x.session)!;
+    eng.startSessionNow(u, 'voice');
+    expect(u.session?.kind).toBe('voice');
+    expect(eng.cells[u.serving].active).toBeGreaterThan(0);
+    eng.setTraffic(u, 'data');
+    eng.step();
+    eng.step();
+    eng.removeUser(u.id);
+    expect(eng.userById(u.id)).toBeUndefined();
+    const active = new Array(eng.cells.length).fill(0);
+    for (const x of eng.users) if (x.session && x.serving >= 0) active[x.serving]++;
+    eng.cells.forEach((c, i) => expect(c.active).toBe(active[i]));
+  });
 });

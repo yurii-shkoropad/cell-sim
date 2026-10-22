@@ -26,6 +26,7 @@ export function defaultSettings(): Settings {
     },
     users: {
       count: 150,
+      staticShare: 0.15,
       pedestrianShare: 0.6,
       pedSpeedMin: 0.8,
       pedSpeedMax: 1.8,
@@ -86,6 +87,9 @@ export function defaultScenario(): Scenario {
     center: { ...c },
     operators: defaultOperators(),
     stations: [...ksLte, ...ksGsm, ...ksNr, ...vfLte, ...lcLte],
+    fixedUsers: [
+      { id: 'fu-main', name: 'Main building probe', lat: 49.8352, lng: 24.0152, operatorId: 'op1', techs: ['GSM', 'LTE', 'NR'], mobility: 'static', traffic: 'data', demandMbps: 10 },
+    ],
     settings: defaultSettings(),
   };
 }

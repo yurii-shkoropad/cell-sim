@@ -16,7 +16,7 @@ export interface LayerState {
   showRoads: boolean;
 }
 
-type EventName = 'network' | 'settings' | 'selection' | 'layers' | 'scenario';
+type EventName = 'network' | 'settings' | 'selection' | 'layers' | 'scenario' | 'users';
 type Listener = () => void;
 
 const STORAGE_KEY = 'radio-sim.scenario.v1';
@@ -78,6 +78,7 @@ export class Store {
 
   replaceScenario(s: Scenario) {
     s.settings = mergeSettings(s.settings);
+    s.fixedUsers ??= [];
     this.scenario = s;
     this.selectedStationId = null;
     if (!s.operators.some((o) => o.id === this.layers.operatorFilter)) this.layers.operatorFilter = 'all';
@@ -118,6 +119,7 @@ function loadSaved(): Scenario | null {
     const s = JSON.parse(raw) as Scenario;
     if (s?.version !== 1 || !Array.isArray(s.stations)) return null;
     s.settings = mergeSettings(s.settings);
+    s.fixedUsers ??= [];
     return s;
   } catch {
     return null;

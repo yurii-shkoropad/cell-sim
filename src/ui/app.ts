@@ -15,6 +15,8 @@ export interface App {
   roads(): RoadGraph | null;
   loadRoads(): Promise<void>;
   respawnUsers(): void;
+  /** Show a user in the inspector panel. */
+  openUser(id: number): void;
   /** Register a callback refreshed ~1×/s with live simulation data. */
   onLiveTick(fn: () => void): void;
 }

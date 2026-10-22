@@ -79,9 +79,29 @@ export interface TechThresholds {
   priority: number;
 }
 
+export type Mobility = 'walk' | 'drive' | 'static';
+/** 'random': Poisson sessions; 'voice'/'data': continuous session (re-established after drops/blocks); 'idle': never starts sessions. */
+export type TrafficMode = 'random' | 'voice' | 'data' | 'idle';
+
+/** Manually placed user, persisted in the scenario. */
+export interface FixedUser {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  operatorId: string;
+  techs: Tech[];
+  mobility: Mobility;
+  traffic: TrafficMode;
+  /** Data demand, Mbps; null = drawn at random per session. */
+  demandMbps: number | null;
+}
+
 export interface UserSettings {
   count: number;
-  /** Fraction of users that are pedestrians (rest are vehicles). */
+  /** Fraction of random users that never move (indoor / stationary). */
+  staticShare: number;
+  /** Fraction of moving users that are pedestrians (rest are vehicles). */
   pedestrianShare: number;
   pedSpeedMin: number;
   pedSpeedMax: number;
@@ -142,5 +162,7 @@ export interface Scenario {
   center: { lat: number; lng: number; zoom: number };
   operators: Operator[];
   stations: BaseStation[];
+  /** Manually placed users (static probes etc.); optional for older files. */
+  fixedUsers?: FixedUser[];
   settings: Settings;
 }

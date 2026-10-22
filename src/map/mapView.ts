@@ -3,12 +3,21 @@ import 'leaflet/dist/leaflet.css';
 import { destination } from '../geo';
 import { verticalFootprint } from '../radio/antenna';
 import type { RadioContext } from '../radio/cells';
-import type { SimEngine } from '../sim/engine';
+import type { SimEngine, SimUser } from '../sim/engine';
 import type { RoadGraph } from '../sim/roads';
 import type { Store } from '../state/store';
 import type { BaseStation } from '../types';
 
 const TECH_SHORT = { GSM: '2G', LTE: '4G', NR: '5G' } as const;
+
+type UserMarker = L.CircleMarker & { uid: number };
+
+/** Fill = state (idle / voice / data / no service); outline = mobility; fixed users are larger squares-ish. */
+function userStyle(u: SimUser): L.CircleMarkerOptions {
+  const fill = u.serving < 0 ? '#000' : u.session?.kind === 'voice' ? '#1565c0' : u.session?.kind === 'data' ? '#2e7d32' : '#9e9e9e';
+  const stroke = u.mode === 'drive' ? '#222' : u.mode === 'static' ? '#f2b705' : '#fff';
+  return { fillColor: fill, color: stroke, weight: u.mode === 'static' ? 2 : 1, radius: (u.session ? 5 : 3.5) + (u.fixedId ? 2 : 0) };
+}
 /** Footprints whose upper beam edge never lands are drawn out to this range (dashed). */
 const FOOTPRINT_MAX_M = 6000;
 
@@ -26,10 +35,18 @@ export class MapView {
   private markers = new Map<string, L.Marker>();
   private highlight: L.CircleMarker | null = null;
   private ctx: RadioContext | null = null;
-  addMode = false;
+  /** What a click on the empty map places: a base station, a static user, or nothing. */
+  placeMode: 'site' | 'user' | null = null;
+  private placeListeners: (() => void)[] = [];
   onAddSite: (lat: number, lng: number) => void = () => {};
+  onAddUser: (lat: number, lng: number) => void = () => {};
   onStationMoved: (id: string) => void = () => {};
   onUserClick: (userId: number) => void = () => {};
+  /** Called while a user is dragged (`final` false) and once on drop. */
+  onUserDrag: (userId: number, lat: number, lng: number, final: boolean) => void = () => {};
+  selectedUserId: number | null = null;
+  private selRing: L.CircleMarker | null = null;
+  private suppressClick = false;
 
   constructor(
     el: HTMLElement,
@@ -56,15 +73,22 @@ export class MapView {
     this.stationLayer.addTo(this.map);
 
     this.map.on('click', (e: L.LeafletMouseEvent) => {
-      if (this.addMode) this.onAddSite(e.latlng.lat, e.latlng.lng);
+      if (this.suppressClick) return;
+      if (this.placeMode === 'site') this.onAddSite(e.latlng.lat, e.latlng.lng);
+      else if (this.placeMode === 'user') this.onAddUser(e.latlng.lat, e.latlng.lng);
       else store.select(null);
     });
     this.map.on('zoomend', () => this.renderSectors());
   }
 
-  setAddMode(on: boolean) {
-    this.addMode = on;
-    this.map.getContainer().classList.toggle('add-mode', on);
+  setPlaceMode(mode: 'site' | 'user' | null) {
+    this.placeMode = mode;
+    this.map.getContainer().classList.toggle('add-mode', mode !== null);
+    this.placeListeners.forEach((fn) => fn());
+  }
+
+  onPlaceModeChange(fn: () => void) {
+    this.placeListeners.push(fn);
   }
 
   setContext(ctx: RadioContext) {
@@ -219,25 +243,23 @@ export class MapView {
     if (!lay.showUsers) {
       this.userLayer.clearLayers();
       this.userMarkers = [];
+      this.selRing = null;
     } else {
       while (this.userMarkers.length > users.length) this.userMarkers.pop()!.remove();
       for (let i = 0; i < users.length; i++) {
         const u = users[i];
-        const fill = u.serving < 0 ? '#000' : u.session?.kind === 'voice' ? '#1565c0' : u.session?.kind === 'data' ? '#2e7d32' : '#9e9e9e';
         let m = this.userMarkers[i];
         if (!m) {
           m = L.circleMarker([u.lat, u.lng], { renderer: this.renderer, radius: 4, weight: 1, color: '#fff', fillOpacity: 0.95 });
-          const id = i;
-          m.on('click', (e) => {
-            L.DomEvent.stopPropagation(e);
-            this.onUserClick(engine.users[id]?.id ?? id);
-          });
+          this.attachUserDrag(m);
           m.addTo(this.userLayer);
           this.userMarkers[i] = m;
         }
+        (m as UserMarker).uid = u.id;
         m.setLatLng([u.lat, u.lng]);
-        m.setStyle({ fillColor: fill, radius: u.session ? 5 : 3.5, color: u.mode === 'drive' ? '#222' : '#fff' });
+        m.setStyle(userStyle(u));
       }
+      this.renderSelection(engine);
     }
 
     // Links from active users to their serving cell.
@@ -264,6 +286,50 @@ export class MapView {
       k++;
     }
     while (this.linkLines.length > k) this.linkLines.pop()!.remove();
+  }
+
+  /** Highlight ring around the user shown in the inspector. */
+  renderSelection(engine: SimEngine) {
+    const u = this.selectedUserId !== null ? engine.userById(this.selectedUserId) : undefined;
+    if (!u || !this.store.layers.showUsers) {
+      this.selRing?.remove();
+      this.selRing = null;
+      return;
+    }
+    if (!this.selRing) this.selRing = L.circleMarker([u.lat, u.lng], { renderer: this.renderer, radius: 10, weight: 2.5, color: '#000', fill: false, interactive: false }).addTo(this.userLayer);
+    this.selRing.setLatLng([u.lat, u.lng]);
+  }
+
+  /** Press on a user: a short press selects it, moving the mouse drags it. */
+  private attachUserDrag(m: L.CircleMarker) {
+    m.on('click', (e) => L.DomEvent.stopPropagation(e));
+    m.on('mousedown', (e: L.LeafletMouseEvent) => {
+      L.DomEvent.stop(e);
+      const uid = (m as UserMarker).uid;
+      const start = e.containerPoint;
+      let moved = false;
+      let last = e.latlng;
+      this.map.dragging.disable();
+      const onMove = (ev: L.LeafletMouseEvent) => {
+        if (!moved && ev.containerPoint.distanceTo(start) < 4) return;
+        moved = true;
+        last = ev.latlng;
+        m.setLatLng(last);
+        if (this.selectedUserId === uid) this.selRing?.setLatLng(last);
+        this.onUserDrag(uid, last.lat, last.lng, false);
+      };
+      const onUp = () => {
+        this.map.off('mousemove', onMove);
+        this.map.dragging.enable();
+        // The mouseup also produces a map click; don't let it place a site or deselect.
+        this.suppressClick = true;
+        setTimeout(() => (this.suppressClick = false), 0);
+        if (moved) this.onUserDrag(uid, last.lat, last.lng, true);
+        else this.onUserClick(uid);
+      };
+      this.map.on('mousemove', onMove);
+      document.addEventListener('mouseup', onUp, { once: true });
+    });
   }
 
   // ---------------------------------------------------------------- roads / area

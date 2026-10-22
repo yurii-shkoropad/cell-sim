@@ -1,6 +1,71 @@
-import { TECHS, type Tech, type TechThresholds } from '../../types';
+import { newId } from '../../radio/presets';
+import { TECHS, type FixedUser, type Mobility, type Tech, type TechThresholds, type TrafficMode } from '../../types';
 import type { App } from '../app';
 import { button, checkField, clear, h, numField, section, selectField } from '../dom';
+
+/** Manually placed users: placement template, click-to-place, list. */
+function fixedUsersSection(app: App): HTMLElement {
+  const { store, engine, mapView } = app;
+  const tpl: { operatorId: string; mobility: Mobility; traffic: TrafficMode } = { operatorId: store.scenario.operators[0]?.id ?? '', mobility: 'static', traffic: 'data' };
+  const listHost = h('div', { class: 'st-list' });
+  const placeBtn = button('Click map to place users', () => mapView.setPlaceMode(mapView.placeMode === 'user' ? null : 'user'), 'primary');
+  mapView.onPlaceModeChange(() => {
+    const on = mapView.placeMode === 'user';
+    placeBtn.classList.toggle('active', on);
+    placeBtn.textContent = on ? 'Placing… (click to stop)' : 'Click map to place users';
+  });
+
+  mapView.onAddUser = (lat, lng) => {
+    const list = (store.scenario.fixedUsers ??= []);
+    const f: FixedUser = { id: newId('fu'), name: `Fixed ${list.length + 1}`, lat, lng, operatorId: tpl.operatorId, techs: [...TECHS], mobility: tpl.mobility, traffic: tpl.traffic, demandMbps: tpl.traffic === 'data' ? 5 : null };
+    list.push(f);
+    const u = engine.addFixedUser(f);
+    store.emit('users');
+    mapView.renderUsers(engine);
+    app.openUser(u.id);
+  };
+
+  const renderList = () => {
+    clear(listHost);
+    const list = store.scenario.fixedUsers ?? [];
+    const ops = new Map(store.scenario.operators.map((o) => [o.id, o]));
+    if (!list.length) listHost.appendChild(h('div', { class: 'hint', style: 'padding:6px 8px' }, 'No fixed users yet.'));
+    for (const f of list) {
+      listHost.appendChild(
+        h('div', { class: 'st-item', onclick: (e: MouseEvent) => {
+          if ((e.target as HTMLElement).closest('.btn')) return; // the × button
+          const u = engine.users.find((x) => x.fixedId === f.id);
+          if (!u) return;
+          mapView.map.panTo([u.lat, u.lng]);
+          app.openUser(u.id);
+        } },
+          h('span', { class: 'dot', style: `background:${ops.get(f.operatorId)?.color ?? '#888'}` }),
+          h('span', { class: 'nm' }, f.name),
+          h('span', { class: 'meta' }, `${f.mobility} · ${f.traffic}`),
+          button('×', () => {
+            store.scenario.fixedUsers = list.filter((x) => x.id !== f.id);
+            const u = engine.users.find((x) => x.fixedId === f.id);
+            if (u) engine.removeUser(u.id);
+            store.emit('users');
+            mapView.renderUsers(engine);
+          }, 'icon', 'Delete fixed user'),
+        ),
+      );
+    }
+  };
+  renderList();
+  store.on('users', renderList);
+  store.on('scenario', renderList);
+
+  return section('Fixed users',
+    h('p', { class: 'hint' }, 'Users you place by hand. They are saved in the scenario and survive resets, so they work as measurement probes (indoor UE, office, stadium). Drag any user on the map to move it, and click one to inspect or edit it.'),
+    selectField('Operator', store.scenario.operators.map((o) => [o.id, o.name] as [string, string]), () => tpl.operatorId, (v) => (tpl.operatorId = v)),
+    selectField('Mobility', [['static', 'Static'], ['walk', 'Pedestrian'], ['drive', 'Vehicle']], () => tpl.mobility, (v) => (tpl.mobility = v)),
+    selectField('Traffic', [['data', 'Continuous data'], ['voice', 'Continuous voice'], ['random', 'Random (Poisson)'], ['idle', 'Idle']], () => tpl.traffic, (v) => (tpl.traffic = v)),
+    h('div', { class: 'row' }, placeBtn),
+    listHost,
+  );
+}
 
 export function usersPanel(app: App): HTMLElement {
   const { store } = app;
@@ -27,6 +92,7 @@ export function usersPanel(app: App): HTMLElement {
     }
   }, 'primary');
 
+  const fixedSection = fixedUsersSection(app);
   const render = () => {
     clear(root);
     const u = store.scenario.settings.users;
@@ -37,12 +103,17 @@ export function usersPanel(app: App): HTMLElement {
         h('div', { class: 'row' }, loadBtn),
         status,
       ),
+      fixedSection,
       section('Population',
         numField('Users', () => u.count, (v) => {
           u.count = Math.round(v);
           set();
-        }, { min: 0, max: 5000, step: 10 }),
-        numField('Pedestrians', () => u.pedestrianShare, (v) => {
+        }, { min: 0, max: 5000, step: 10, title: 'Randomly generated users (fixed users come on top)' }),
+        numField('Static users', () => u.staticShare, (v) => {
+          u.staticShare = v;
+          set();
+        }, { min: 0, max: 100, scale: 100, unit: '%', title: 'Share of random users that never move (indoor / stationary)' }),
+        numField('Pedestrians (of moving)', () => u.pedestrianShare, (v) => {
           u.pedestrianShare = v;
           set();
         }, { min: 0, max: 100, scale: 100, unit: '%' }),
@@ -291,6 +362,8 @@ export function layersPanel(app: App): HTMLElement {
           h('span', null, h('i', { style: 'background:#2e7d32' }), 'data'),
           h('span', null, h('i', { style: 'background:#000' }), 'no service'),
           h('span', null, h('i', { style: 'background:#fff;border:2px solid #222' }), 'vehicle'),
+          h('span', null, h('i', { style: 'background:#fff;border:2px solid #f2b705' }), 'static'),
+          h('span', null, 'larger dot = fixed user'),
         ),
       ),
     );

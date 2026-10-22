@@ -26,11 +26,12 @@ export function networkPanel(app: App): HTMLElement {
   const opOptions = () => store.scenario.operators.map((o) => [o.id, o.name] as [string, string]);
   const presetOptions = PRESETS.map((p) => [p.key, p.label] as [string, string]);
 
-  const addBtn = button('Click map to place', () => {
-    app.mapView.setAddMode(!app.mapView.addMode);
-    addBtn.classList.toggle('active', app.mapView.addMode);
-    addBtn.textContent = app.mapView.addMode ? 'Placing… (click to stop)' : 'Click map to place';
-  }, 'primary');
+  const addBtn = button('Click map to place', () => app.mapView.setPlaceMode(app.mapView.placeMode === 'site' ? null : 'site'), 'primary');
+  app.mapView.onPlaceModeChange(() => {
+    const on = app.mapView.placeMode === 'site';
+    addBtn.classList.toggle('active', on);
+    addBtn.textContent = on ? 'Placing… (click to stop)' : 'Click map to place';
+  });
 
   app.mapView.onAddSite = (lat, lng) => {
     const p = presetByKey(gen.preset);

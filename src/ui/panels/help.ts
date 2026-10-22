@@ -19,7 +19,7 @@ const HTML = `
 <p><code>A<sub>H</sub>(φ) = −min(12(φ/φ<sub>3dB</sub>)², A<sub>m</sub>)</code>, <code>A<sub>V</sub>(θ) = −min(12((θ−θ<sub>tilt</sub>)/θ<sub>3dB</sub>)², 20)</code>, <code>A = −min(−(A<sub>H</sub>+A<sub>V</sub>), A<sub>m</sub>)</code>. A<sub>m</sub> is the front-to-back ratio; θ is the depression angle from the antenna to the UE. NR beamforming is approximated by a higher static gain.</p>
 
 <h4>3. Shadowing</h4>
-<p>Log-normal with standard deviation σ. It is spatially correlated: Gaussian samples sit on a lattice spaced by the decorrelation distance, one lattice per site, and are smoothly interpolated and renormalised to unit variance. The heatmap and the moving users see the same field.</p>
+<p>Log-normal with standard deviation σ. It is spatially correlated: Gaussian samples sit on a lattice spaced by the decorrelation distance, one lattice per site, and are smoothly interpolated and renormalised to unit variance. The variate is truncated at ±3σ, which avoids unphysical ±30 dB spots. The heatmap and the moving users see the same field.</p>
 
 <h4>4. Link budget</h4>
 <p><code>RSRP = P<sub>tx</sub> − L<sub>cable</sub> − 10·log₁₀(12·N<sub>RB</sub>) + G<sub>ant</sub> + A(φ,θ) − L<sub>path</sub> − X<sub>σ</sub></code>. For GSM, RxLev uses the whole BCCH carrier power (no per-RE division).</p>
