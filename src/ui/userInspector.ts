@@ -1,5 +1,5 @@
 import L from 'leaflet';
-import { linkModulation, linkRank, peakRateMbps } from '../radio/cells';
+import { GSM_SLOT_MBPS, linkModulation, linkRank, peakRateMbps, type CellRF } from '../radio/cells';
 import { modulation } from '../radio/modulation';
 import { newId } from '../radio/presets';
 import { techMaskOf, techsOf, type SimUser } from '../sim/engine';
@@ -8,6 +8,18 @@ import { TECHS, type FixedUser, type Mobility, type TrafficMode } from '../types
 import type { App } from './app';
 import { button, clear, fmt, h, selectEl } from './dom';
 import { fmtTime } from './kpiPanel';
+
+/**
+ * Ideal-conditions ceiling for a UE on a cell: every RB, every layer the cell and
+ * phone can both handle, each at the cell's max modulation (perfect SINR, no other users).
+ */
+function maxPossible(c: CellRF, ueRx: number, overhead: number): string {
+  if (c.tech === 'GSM') return `${fmt(GSM_SLOT_MBPS * 1000, 1)} kbps (one GPRS timeslot)`;
+  const layers = Math.max(1, Math.min(c.ports, c.maxLayers, ueRx));
+  const mod = modulation(c.modulation);
+  const mbps = (layers * mod.seMax * c.rbBwHz * (1 - overhead) * c.rbs) / 1e6;
+  return `${fmt(mbps, 1)} Mbps (${layers} layer${layers > 1 ? 's' : ''} × ${mod.label}, ideal radio, alone)`;
+}
 
 const MOBILITY: [Mobility, string][] = [['walk', 'Pedestrian'], ['drive', 'Vehicle'], ['static', 'Static']];
 const TRAFFIC: [TrafficMode, string][] = [['random', 'Random (Poisson)'], ['voice', 'Continuous voice'], ['data', 'Continuous data'], ['idle', 'Idle (no sessions)']];
@@ -261,6 +273,8 @@ export class UserInspector {
           const cap = c.tech === 'GSM' ? '' : ` (cell max ${modulation(c.modulation).label})`;
           return `${m ? m.label : 'none (SINR too low)'}${cap}`;
         })() : '—'),
+        kv('Carrier', c ? (c.tech === 'GSM' ? `${c.freqMHz} MHz · 200 kHz · ${c.tch} TCH` : `${c.freqMHz} MHz · ${c.rbs} RB (${fmt(c.occBwMHz, 1)} MHz used)`) : '—'),
+        kv('Max possible', c ? maxPossible(c, engine.ueRx(u), store.scenario.settings.radio.overhead) : '—'),
         kv('Peak here', c && c.tech !== 'GSM' ? `${fmt(peakRateMbps(c, u.sinr, store.scenario.settings.radio, engine.ueRx(u)), 1)} Mbps (alone in the cell)` : '—'),
         kv('Throughput', s?.kind === 'data' ? `${fmt(u.thrMbps, 2)} of ${fmt(s.demandMbps, 2)} Mbps` : s ? `${fmt(u.thrMbps * 1000, 0)} kbps (GBR)` : '—'),
         kv('HO candidate', u.hoCand >= 0 && ctx.cells[u.hoCand] ? `${ctx.cells[u.hoCand].name}, TTT ${Math.max(0, u.hoTimerMs).toFixed(0)}/${th?.tttMs ?? 0} ms` : u.hoTimerMs < 0 ? `back-off ${(-u.hoTimerMs).toFixed(0)} ms` : '—'),
