@@ -23,6 +23,8 @@ export function defaultSettings(): Settings {
       seMaxNr: 7.4,
       overhead: 0.25,
       gsmAdjacentRejectionDb: 18,
+      precodingEfficiency: 0.5,
+      muMimoEfficiency: 0.5,
     },
     users: {
       count: 150,
@@ -34,6 +36,8 @@ export function defaultSettings(): Settings {
       vehSpeedMax: 14,
       nrCapableShare: 0.4,
       lteCapableShare: 0.9,
+      ueRxNr: 4,
+      ueRxLte: 2,
       voiceCallsPerHour: 2,
       voiceMeanDurationS: 90,
       dataSessionsPerHour: 12,

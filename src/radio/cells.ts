@@ -1,6 +1,7 @@
 import { LocalProjection } from '../geo';
 import type { RadioSettings, Scenario, Tech } from '../types';
 import { antennaAttenuation } from './antenna';
+import { antennaType, bestRank, validAntennaFor, type RankChoice } from './mimo';
 import { MIN_DISTANCE_KM, pathLossCoeffs } from './propagation';
 import { gsmTrafficChannels, occupiedBandwidthMHz, powerUnits, rbBandwidthHz, resourceBlocks } from './presets';
 import { seedFromString, shadowingDb } from './shadowing';
@@ -47,6 +48,12 @@ export interface CellRF {
   tch: number;
   maxUsers: number;
   color: string;
+  /** Antenna / MIMO configuration. */
+  ports: number;
+  maxLayers: number;
+  codebook: boolean;
+  bfGainDb: number;
+  maxMu: number;
 }
 
 export interface RadioContext {
@@ -120,6 +127,10 @@ export function buildRadioContext(scn: Scenario): RadioContext {
         tch: bs.tech === 'GSM' ? gsmTrafficChannels(bs.trxCount) : 0,
         maxUsers: bs.maxUsers,
         color: cellColor(cells.length),
+        ...(() => {
+          const a = antennaType(validAntennaFor(bs.tech, bs.antennaType));
+          return { ports: a.ports, maxLayers: a.maxLayers, codebook: a.codebook, bfGainDb: a.bfGainDb, maxMu: a.maxMu };
+        })(),
       });
     });
   }
@@ -174,7 +185,7 @@ export function rxLevel(ctx: RadioContext, c: CellRF, x: number, y: number): num
   const fs = c.fsConst + 20 * ld;
   const pl = hata > fs ? hata : fs;
   const sh = ctx.shadowing ? shadowingDb(c.siteSeed, x, y, ctx.sigma, ctx.decorr) : 0;
-  return c.refTxDbm + c.gain + att - pl - sh;
+  return c.refTxDbm + c.gain + c.bfGainDb + att - pl - sh;
 }
 
 export const dbmToMw = (dbm: number) => Math.pow(10, dbm / 10);
@@ -200,21 +211,27 @@ export function sinrDb(ctx: RadioContext, levels: Float64Array | Float32Array, i
   return 10 * Math.log10(sMw / (iMw + dbmToMw(v.noiseDbm)));
 }
 
-/** Spectral efficiency, bps/Hz (attenuated, truncated Shannon, 3GPP TR 36.942 A.2). */
+/** Spectral efficiency of one layer, bps/Hz (attenuated, truncated Shannon, 3GPP TR 36.942 A.2). */
 export function spectralEfficiency(sinr: number, tech: Tech, r: RadioSettings): number {
   if (tech === 'GSM' || sinr < r.sinrMinDb) return 0;
   const se = r.shannonAlpha * Math.log2(1 + Math.pow(10, sinr / 10));
   return Math.min(se, tech === 'NR' ? r.seMaxNr : r.seMaxLte);
 }
 
-/** Achievable rate on one resource block, Mbps. */
-export function ratePerRbMbps(c: CellRF, sinr: number, r: RadioSettings): number {
-  return (spectralEfficiency(sinr, c.tech, r) * c.rbBwHz * (1 - r.overhead)) / 1e6;
+/** Rank-adapted MIMO link to a UE with `ueRx` receive antennas. */
+export function linkRank(c: CellRF, sinr: number, ueRx: number, r: RadioSettings): RankChoice {
+  if (c.tech === 'GSM') return { rank: 1, se: 0, layerSinrDb: sinr };
+  return bestRank(sinr, c, ueRx, c.tech === 'NR' ? r.seMaxNr : r.seMaxLte, r);
 }
 
-/** Peak cell throughput at a given SINR (all RBs to one user), Mbps. */
-export function peakRateMbps(c: CellRF, sinr: number, r: RadioSettings): number {
-  return ratePerRbMbps(c, sinr, r) * c.rbs;
+/** Achievable rate on one resource block (all layers), Mbps. */
+export function ratePerRbMbps(c: CellRF, sinr: number, r: RadioSettings, ueRx = 1): number {
+  return (linkRank(c, sinr, ueRx, r).se * c.rbBwHz * (1 - r.overhead)) / 1e6;
+}
+
+/** Peak single-user throughput at a given SINR (all RBs to one UE, no MU-MIMO), Mbps. */
+export function peakRateMbps(c: CellRF, sinr: number, r: RadioSettings, ueRx = 1): number {
+  return ratePerRbMbps(c, sinr, r, ueRx) * c.rbs;
 }
 
 /** GSM data (GPRS CS-2) per timeslot, Mbps. */

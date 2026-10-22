@@ -15,6 +15,8 @@ export interface HeatmapRequest {
   loads: Float32Array | null;
   /** Minimum level for a cell to count as serving, per tech. */
   minRx: Record<Tech, number>;
+  /** UE receive antennas assumed for the throughput layer, per tech. */
+  ueRx: Record<Tech, number>;
 }
 
 export interface HeatmapResult {
@@ -30,7 +32,7 @@ export interface HeatmapResult {
 
 self.onmessage = (e: MessageEvent<HeatmapRequest>) => {
   const t0 = performance.now();
-  const { ctx, lats, lngs, op, tech, loads, radio, minRx } = e.data;
+  const { ctx, lats, lngs, op, tech, loads, radio, minRx, ueRx } = e.data;
   const proj = new LocalProjection(ctx.lat0, ctx.lng0);
   const cols = lngs.length;
   const rows = lats.length;
@@ -66,7 +68,7 @@ self.onmessage = (e: MessageEvent<HeatmapRequest>) => {
       server[k] = best;
       const s = sinrDb(ctx, levels, best, loads);
       sinr[k] = s;
-      thr[k] = peakRateMbps(ctx.cells[best], s, radio);
+      thr[k] = peakRateMbps(ctx.cells[best], s, radio, ueRx[ctx.cells[best].tech]);
     }
   }
   const res: HeatmapResult = { gen: e.data.gen, cols, rows, rsrp, server, sinr, thr, ms: performance.now() - t0 };

@@ -1,4 +1,5 @@
 import L from 'leaflet';
+import { linkRank } from '../radio/cells';
 import { newId } from '../radio/presets';
 import { techMaskOf, techsOf, type SimUser } from '../sim/engine';
 import { EVENT_COLOR, EVENT_LABEL } from '../sim/kpi';
@@ -240,6 +241,11 @@ export class UserInspector {
         kv('Serving cell', c ? `${c.name} · ${c.tech} · PCI ${c.pci} · ${c.freqMHz} MHz` : '—'),
         kv(c?.tech === 'GSM' ? 'RxLev' : 'RSRP', c ? `${fmt(u.rx)} dBm` : '—', c && th && u.rx < th.minRxDbm + 6 ? 'bad' : ''),
         kv(c?.tech === 'GSM' ? 'C/(I+N)' : 'SINR', c ? `${fmt(u.sinr)} dB` : '—', c && th && u.sinr < th.qOutSinrDb + 3 ? 'bad' : ''),
+        kv('MIMO', c && c.tech !== 'GSM' ? (() => {
+          const ant = `${c.ports}T`;
+          const lk = linkRank(c, u.sinr, engine.ueRx(u), store.scenario.settings.radio);
+          return `${lk.rank} layer${lk.rank > 1 ? 's' : ''} (cell ${ant}${c.maxLayers > 1 ? `, max ${Math.min(c.maxLayers, c.ports)}` : ''}${c.bfGainDb ? `, BF +${c.bfGainDb} dB` : ''} · UE ${engine.ueRx(u)}Rx)`;
+        })() : '—'),
         kv('Throughput', s?.kind === 'data' ? `${fmt(u.thrMbps, 2)} of ${fmt(s.demandMbps, 2)} Mbps` : s ? `${fmt(u.thrMbps * 1000, 0)} kbps (GBR)` : '—'),
         kv('HO candidate', u.hoCand >= 0 && ctx.cells[u.hoCand] ? `${ctx.cells[u.hoCand].name}, TTT ${Math.max(0, u.hoTimerMs).toFixed(0)}/${th?.tttMs ?? 0} ms` : u.hoTimerMs < 0 ? `back-off ${(-u.hoTimerMs).toFixed(0)} ms` : '—'),
         kv('RLF timer', u.rlfTimerMs > 0 ? `${u.rlfTimerMs.toFixed(0)}/${th?.rlfTimerMs ?? 0} ms` : '—', u.rlfTimerMs > 0 ? 'bad' : ''),

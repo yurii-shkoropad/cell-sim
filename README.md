@@ -33,8 +33,8 @@ For example, `cellsim.engine.step()`, `cellsim.engine.counters`, `cellsim.engine
 ## What you can configure
 
 **Per base station:** technology (GSM/LTE/NR), template (GSM900/1800, LTE B20/B3/B1/B7, NR n78/n28),
-bandwidth, transmit power, antenna height, feeder loss, TRX count (GSM), maximum active users,
-position, and on-air state.
+bandwidth, antenna / MIMO type (SISO, 2×2, 4×4, 8T8R, massive MIMO 32T32R / 64T64R), transmit power,
+antenna height, feeder loss, TRX count (GSM), maximum active users, position, and on-air state.
 
 **Per sector:** azimuth, horizontal and vertical beamwidth, tilt, gain, front-to-back ratio, carrier
 frequency (the ARFCN, EARFCN or NR-ARFCN is shown), PCI or BSIC, and on/off.
@@ -80,7 +80,8 @@ The **Models** tab in the app has the full formulas. In short:
 | Antenna | 3GPP TR 36.814 parabolic horizontal and vertical pattern, with tilt and front-to-back limit |
 | Shadowing | Log-normal truncated at ±3σ, spatially correlated (lattice at the decorrelation distance, per site) |
 | SINR | Wideband, spectrum-overlap weighted, load weighted; thermal noise is kTB + NF |
-| Throughput | Truncated Shannon (3GPP TR 36.942), per-RB rate × RBs |
+| Throughput | Truncated Shannon (3GPP TR 36.942) per layer, per-RB rate × RBs |
+| Antennas / MIMO | SISO, 2T2R, 4T4R, 8T8R, massive MIMO 32T32R/64T64R: beamforming gain, rank adaptation (power split, Rx combining, precoding gain), MU-MIMO pairing |
 | Scheduler | GBR voice first, then max-min fair water-filling for data; GSM uses TCH timeslots (8·TRX − 2) |
 | Mobility | Idle selection by RAT priority; A3 intra-RAT and B2 inter-RAT handover with TTT; RLF via Qout + T310 |
 | Traffic | Poisson arrivals, exponential durations and demand |
@@ -93,7 +94,8 @@ The **Models** tab in the app has the full formulas. In short:
   app flags this.
 - Path loss ignores buildings and terrain. Only the statistical shadowing accounts for obstructions.
 - Only the downlink is modelled. UMTS is not modelled; UMTS rows are skipped on import.
-- NR beamforming is approximated by a static antenna gain.
+- Beamforming is approximated by a static array gain; there are no per-beam patterns. MIMO uses an
+  abstract rank-adaptation model rather than channel matrices, and has no interference rejection.
 - UE measurements are instantaneous; there is no L3 filtering. Ping-pong rates with strong
   shadowing are therefore pessimistic, so tune them with hysteresis, TTT or σ.
 

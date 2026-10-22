@@ -1,6 +1,7 @@
 import { hexGrid, randomSites } from '../../planning/patterns';
 import { cellColor } from '../../radio/cells';
-import { channelNumber, gsmTrafficChannels, makeSector, makeStation, newId, PRESETS, presetByKey, resourceBlocks } from '../../radio/presets';
+import { antennaType, antennaTypesFor, bestRank, validAntennaFor } from '../../radio/mimo';
+import { channelNumber, gsmTrafficChannels, makeSector, makeStation, newId, PRESETS, presetByKey, rbBandwidthHz, resourceBlocks } from '../../radio/presets';
 import { verticalFootprint } from '../../radio/antenna';
 import { validity } from '../../radio/propagation';
 import type { BaseStation, Sector, Tech } from '../../types';
@@ -198,12 +199,21 @@ export function networkPanel(app: App): HTMLElement {
     const renderDerived = () => {
       clear(derived);
       const s0 = bs.sectors[0];
-      const eirp = bs.txPowerDbm - bs.cableLossDb + (s0?.gain ?? 0);
-      const lines: string[] = [`EIRP ${fmt(eirp)} dBm (${fmt(Math.pow(10, (eirp - 30) / 10), 0)} W) per sector`];
+      const ant = antennaType(validAntennaFor(bs.tech, bs.antennaType));
+      const eirp = bs.txPowerDbm - bs.cableLossDb + (s0?.gain ?? 0) + ant.bfGainDb;
+      const lines: string[] = [`EIRP ${fmt(eirp)} dBm (${fmt(Math.pow(10, (eirp - 30) / 10), 0)} W) per sector${ant.bfGainDb ? ` incl. +${ant.bfGainDb} dB beamforming` : ''}`];
       if (bs.tech === 'GSM') lines.push(`${gsmTrafficChannels(bs.trxCount)} TCH per sector (${bs.trxCount} TRX)`);
       else {
-        const rb = resourceBlocks(bs.tech, bs.bandwidthMHz, s0?.freqMHz ?? 0);
-        lines.push(`${rb} RB · RS power/RE ${fmt(bs.txPowerDbm - 10 * Math.log10(12 * rb))} dBm`);
+        const f = s0?.freqMHz ?? 0;
+        const rb = resourceBlocks(bs.tech, bs.bandwidthMHz, f);
+        lines.push(`${rb} RB · RS power/RE at antenna ${fmt(bs.txPowerDbm - bs.cableLossDb - 10 * Math.log10(12 * rb))} dBm`);
+        // Single-UE peak at excellent radio conditions, for orientation.
+        const r = store.scenario.settings.radio;
+        const ueRx = bs.tech === 'NR' ? store.scenario.settings.users.ueRxNr : store.scenario.settings.users.ueRxLte;
+        const best = bestRank(30, ant, ueRx, bs.tech === 'NR' ? r.seMaxNr : r.seMaxLte, r);
+        const peak = (best.se * rbBandwidthHz(bs.tech, f) * (1 - r.overhead) * rb) / 1e6;
+        lines.push(`${ant.label}: up to ${Math.min(ant.maxLayers, ant.ports)} layers${ant.maxMu > 1 ? `, MU-MIMO up to ${ant.maxMu} users/RB` : ''}`);
+        lines.push(`Peak DL ≈ ${fmt(peak, 0)} Mbps (one ${ueRx}Rx UE, ${best.rank} layers @ 30 dB SINR)`);
       }
       const ch = s0 ? channelNumber(bs.tech, s0.freqMHz) : null;
       if (ch) lines.push(`${ch.label} ${ch.value} (sector 1)`);
@@ -248,7 +258,7 @@ export function networkPanel(app: App): HTMLElement {
 
     const applyPreset = (key: string) => {
       const p = presetByKey(key);
-      Object.assign(bs, { tech: p.tech, band: p.band, bandwidthMHz: p.bandwidthMHz, txPowerDbm: p.txPowerDbm, heightM: p.heightM, trxCount: p.trxCount, maxUsers: p.maxUsers });
+      Object.assign(bs, { tech: p.tech, band: p.band, bandwidthMHz: p.bandwidthMHz, txPowerDbm: p.txPowerDbm, heightM: p.heightM, trxCount: p.trxCount, maxUsers: p.maxUsers, antennaType: p.antennaType });
       bs.sectors.forEach((s) => Object.assign(s, { freqMHz: p.freqMHz, gain: s.hBeamwidth >= 360 ? Math.max(p.gain - 7, 2) : p.gain, vBeamwidth: p.vBeamwidth, tilt: p.tilt, frontToBack: p.frontToBack, hBeamwidth: s.hBeamwidth >= 360 ? 360 : p.hBeamwidth }));
       structural();
     };
@@ -275,8 +285,16 @@ export function networkPanel(app: App): HTMLElement {
           bs.tech = v;
           if (v === 'GSM') bs.bandwidthMHz = 0.2;
           else if (!BW_OPTIONS[v].includes(bs.bandwidthMHz)) bs.bandwidthMHz = v === 'LTE' ? 20 : 100;
+          bs.antennaType = validAntennaFor(v, bs.antennaType);
           structural();
         }),
+        h('label', { class: 'field', title: antennaType(validAntennaFor(bs.tech, bs.antennaType)).note },
+          h('span', { class: 'lbl' }, 'Antenna / MIMO'),
+          h('span', { class: 'ctl' }, selectEl(antennaTypesFor(bs.tech).map((a) => [a.key, a.label] as [string, string]), () => validAntennaFor(bs.tech, bs.antennaType), (v) => {
+            bs.antennaType = v;
+            structural();
+          })),
+        ),
         textField('Band label', () => bs.band, (v) => {
           bs.band = v;
           changed();

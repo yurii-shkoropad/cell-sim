@@ -95,6 +95,7 @@ export class HeatmapLayer {
       tech: lay.techFilter === 'all' ? null : lay.techFilter,
       loads: scn.settings.radio.interferenceLoad === 'full' ? null : this.loadsProvider(),
       minRx: { GSM: th.GSM.minRxDbm, LTE: th.LTE.minRxDbm, NR: th.NR.minRxDbm },
+      ueRx: { GSM: 1, LTE: scn.settings.users.ueRxLte, NR: scn.settings.users.ueRxNr },
     };
     this.pending = {
       lats,

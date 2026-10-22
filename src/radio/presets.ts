@@ -1,4 +1,5 @@
 import type { BaseStation, Sector, Tech } from '../types';
+import type { AntennaTypeKey } from './mimo';
 
 export interface StationPreset {
   key: string;
@@ -16,17 +17,18 @@ export interface StationPreset {
   frontToBack: number;
   trxCount: number;
   maxUsers: number;
+  antennaType: AntennaTypeKey;
 }
 
 export const PRESETS: StationPreset[] = [
-  { key: 'gsm900', label: 'GSM 900', tech: 'GSM', band: 'GSM900', freqMHz: 947.4, bandwidthMHz: 0.2, txPowerDbm: 43, heightM: 30, gain: 15.5, hBeamwidth: 65, vBeamwidth: 10, tilt: 3, frontToBack: 25, trxCount: 2, maxUsers: 14 },
-  { key: 'gsm1800', label: 'GSM 1800', tech: 'GSM', band: 'DCS1800', freqMHz: 1850.2, bandwidthMHz: 0.2, txPowerDbm: 43, heightM: 30, gain: 17, hBeamwidth: 65, vBeamwidth: 8, tilt: 4, frontToBack: 25, trxCount: 2, maxUsers: 14 },
-  { key: 'lte800', label: 'LTE 800 (B20)', tech: 'LTE', band: 'B20', freqMHz: 806, bandwidthMHz: 10, txPowerDbm: 46, heightM: 35, gain: 15, hBeamwidth: 65, vBeamwidth: 12, tilt: 3, frontToBack: 25, trxCount: 1, maxUsers: 200 },
-  { key: 'lte1800', label: 'LTE 1800 (B3)', tech: 'LTE', band: 'B3', freqMHz: 1815, bandwidthMHz: 20, txPowerDbm: 46, heightM: 30, gain: 17.5, hBeamwidth: 65, vBeamwidth: 7, tilt: 5, frontToBack: 25, trxCount: 1, maxUsers: 200 },
-  { key: 'lte2100', label: 'LTE 2100 (B1)', tech: 'LTE', band: 'B1', freqMHz: 2140, bandwidthMHz: 15, txPowerDbm: 46, heightM: 30, gain: 18, hBeamwidth: 65, vBeamwidth: 6.5, tilt: 5, frontToBack: 25, trxCount: 1, maxUsers: 200 },
-  { key: 'lte2600', label: 'LTE 2600 (B7)', tech: 'LTE', band: 'B7', freqMHz: 2655, bandwidthMHz: 20, txPowerDbm: 46, heightM: 28, gain: 18, hBeamwidth: 65, vBeamwidth: 6, tilt: 6, frontToBack: 25, trxCount: 1, maxUsers: 200 },
-  { key: 'nr3500', label: 'NR 3500 (n78)', tech: 'NR', band: 'n78', freqMHz: 3550, bandwidthMHz: 100, txPowerDbm: 49, heightM: 28, gain: 24, hBeamwidth: 65, vBeamwidth: 8, tilt: 6, frontToBack: 30, trxCount: 1, maxUsers: 400 },
-  { key: 'nr700', label: 'NR 700 (n28)', tech: 'NR', band: 'n28', freqMHz: 773, bandwidthMHz: 10, txPowerDbm: 46, heightM: 35, gain: 15, hBeamwidth: 65, vBeamwidth: 12, tilt: 3, frontToBack: 25, trxCount: 1, maxUsers: 200 },
+  { key: 'gsm900', label: 'GSM 900', tech: 'GSM', band: 'GSM900', freqMHz: 947.4, bandwidthMHz: 0.2, txPowerDbm: 43, heightM: 30, gain: 15.5, hBeamwidth: 65, vBeamwidth: 10, tilt: 3, frontToBack: 25, trxCount: 2, maxUsers: 14, antennaType: 'siso' },
+  { key: 'gsm1800', label: 'GSM 1800', tech: 'GSM', band: 'DCS1800', freqMHz: 1850.2, bandwidthMHz: 0.2, txPowerDbm: 43, heightM: 30, gain: 17, hBeamwidth: 65, vBeamwidth: 8, tilt: 4, frontToBack: 25, trxCount: 2, maxUsers: 14, antennaType: 'siso' },
+  { key: 'lte800', label: 'LTE 800 (B20)', tech: 'LTE', band: 'B20', freqMHz: 806, bandwidthMHz: 10, txPowerDbm: 46, heightM: 35, gain: 15, hBeamwidth: 65, vBeamwidth: 12, tilt: 3, frontToBack: 25, trxCount: 1, maxUsers: 200, antennaType: '2t2r' },
+  { key: 'lte1800', label: 'LTE 1800 (B3)', tech: 'LTE', band: 'B3', freqMHz: 1815, bandwidthMHz: 20, txPowerDbm: 46, heightM: 30, gain: 17.5, hBeamwidth: 65, vBeamwidth: 7, tilt: 5, frontToBack: 25, trxCount: 1, maxUsers: 200, antennaType: '4t4r' },
+  { key: 'lte2100', label: 'LTE 2100 (B1)', tech: 'LTE', band: 'B1', freqMHz: 2140, bandwidthMHz: 15, txPowerDbm: 46, heightM: 30, gain: 18, hBeamwidth: 65, vBeamwidth: 6.5, tilt: 5, frontToBack: 25, trxCount: 1, maxUsers: 200, antennaType: '2t2r' },
+  { key: 'lte2600', label: 'LTE 2600 (B7)', tech: 'LTE', band: 'B7', freqMHz: 2655, bandwidthMHz: 20, txPowerDbm: 46, heightM: 28, gain: 18, hBeamwidth: 65, vBeamwidth: 6, tilt: 6, frontToBack: 25, trxCount: 1, maxUsers: 200, antennaType: '4t4r' },
+  { key: 'nr3500', label: 'NR 3500 (n78)', tech: 'NR', band: 'n78', freqMHz: 3550, bandwidthMHz: 100, txPowerDbm: 49, heightM: 28, gain: 17, hBeamwidth: 65, vBeamwidth: 8, tilt: 6, frontToBack: 30, trxCount: 1, maxUsers: 400, antennaType: '64t64r' },
+  { key: 'nr700', label: 'NR 700 (n28)', tech: 'NR', band: 'n28', freqMHz: 773, bandwidthMHz: 10, txPowerDbm: 46, heightM: 35, gain: 15, hBeamwidth: 65, vBeamwidth: 12, tilt: 3, frontToBack: 25, trxCount: 1, maxUsers: 200, antennaType: '4t4r' },
 ];
 
 export const presetByKey = (key: string) => PRESETS.find((p) => p.key === key) ?? PRESETS[3];
@@ -153,6 +155,7 @@ export function makeStation(
     cableLossDb: 2,
     trxCount: p.trxCount,
     maxUsers: p.maxUsers,
+    antennaType: p.antennaType,
     sectors,
     enabled: true,
   };

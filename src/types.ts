@@ -54,6 +54,8 @@ export interface BaseStation {
   cableLossDb: number;
   /** GSM: number of TRX per sector. */
   trxCount: number;
+  /** Antenna / MIMO configuration (see radio/mimo.ts); missing = SISO for older files. */
+  antennaType?: string;
   /** Admission limit on simultaneously connected (active) users per sector. */
   maxUsers: number;
   sectors: Sector[];
@@ -110,6 +112,9 @@ export interface UserSettings {
   /** Fraction of devices that support NR / LTE. All devices support GSM. */
   nrCapableShare: number;
   lteCapableShare: number;
+  /** Receive antennas of NR-capable / LTE-only devices (GSM-only devices have 1). */
+  ueRxNr: number;
+  ueRxLte: number;
   voiceCallsPerHour: number;
   voiceMeanDurationS: number;
   dataSessionsPerHour: number;
@@ -139,6 +144,10 @@ export interface RadioSettings {
   overhead: number;
   /** GSM adjacent channel rejection, dB. */
   gsmAdjacentRejectionDb: number;
+  /** Fraction (in dB) of the ideal transmit precoding gain 10·log10(Ntx/rank) realised by codebook MIMO. */
+  precodingEfficiency: number;
+  /** MU-MIMO pairing efficiency: each extra co-scheduled user adds this fraction of a cell's capacity. */
+  muMimoEfficiency: number;
 }
 
 export interface SimSettings {

@@ -141,6 +141,14 @@ export function usersPanel(app: App): HTMLElement {
           u.nrCapableShare = v;
           set();
         }, { min: 0, max: 100, scale: 100, unit: '%', title: 'NR-capable devices are also LTE-capable' }),
+        numField('Rx antennas: NR devices', () => u.ueRxNr, (v) => {
+          u.ueRxNr = Math.round(v);
+          set();
+        }, { min: 1, max: 8, step: 1, title: 'Limits MIMO layers and sets receive-combining gain' }),
+        numField('Rx antennas: LTE devices', () => u.ueRxLte, (v) => {
+          u.ueRxLte = Math.round(v);
+          set();
+        }, { min: 1, max: 8, step: 1, title: 'GSM-only devices always have 1' }),
         h('p', { class: 'hint' }, 'Operator subscriber shares are set in Network → Operators.'),
       ),
       section('Traffic (per user, Poisson arrivals, exponential durations)',
@@ -248,6 +256,14 @@ export function radioPanel(app: App): HTMLElement {
           r.overhead = v;
           set();
         }, { min: 0, max: 60, scale: 100, unit: '%' }),
+        numField('Precoding efficiency', () => r.precodingEfficiency, (v) => {
+          r.precodingEfficiency = v;
+          set();
+        }, { min: 0, max: 1, step: 0.05, title: 'Share (in dB) of the ideal codebook precoding gain 10·log10(Ntx/rank) that is realised' }),
+        numField('MU-MIMO pairing efficiency', () => r.muMimoEfficiency, (v) => {
+          r.muMimoEfficiency = v;
+          set();
+        }, { min: 0, max: 1, step: 0.05, title: 'Capacity added by each extra co-scheduled user on massive-MIMO / 8T8R cells' }),
       ),
       section('Mobility management thresholds', thresholdTable(store.scenario.settings.thresholds, set)),
       section('Simulation',

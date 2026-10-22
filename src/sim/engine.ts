@@ -1,5 +1,6 @@
 import { LocalProjection } from '../geo';
-import { GSM_SLOT_MBPS, ratePerRbMbps, rxLevel, sinrDb, type RadioContext } from '../radio/cells';
+import { GSM_SLOT_MBPS, linkRank, ratePerRbMbps, rxLevel, sinrDb, type RadioContext } from '../radio/cells';
+import { muMimoGain } from '../radio/mimo';
 import type { FixedUser, Mobility, Scenario, Settings, Tech, TrafficMode } from '../types';
 import { EventLog, emptyCounters, percentile, type KpiCounters, type KpiSample, type SimEventType } from './kpi';
 import { route, type Bounds, type RoadGraph, type TravelMode } from './roads';
@@ -55,6 +56,8 @@ export interface SimUser {
   rx: number;
   sinr: number;
   thrMbps: number;
+  /** MIMO layers currently used on the downlink (0 when not served). */
+  rank: number;
   hoCand: number;
   hoTimerMs: number;
   rlfTimerMs: number;
@@ -75,6 +78,8 @@ export interface CellState {
   tchUsed: number;
   /** PRB / timeslot utilisation, 0..1. */
   load: number;
+  /** Current MU-MIMO capacity multiplier (1 = no pairing). */
+  muGain: number;
   hoIn: number;
   hoOut: number;
   drops: number;
@@ -145,7 +150,7 @@ export class SimEngine {
     const prevLoads = this.loads;
     const prevCells = this.cells;
     const keyToNew = new Map(ctx.cells.map((_, i) => [cellKey(ctx, i), i]));
-    this.cells = ctx.cells.map(() => ({ active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, hoIn: 0, hoOut: 0, drops: 0, blocks: 0 }));
+    this.cells = ctx.cells.map(() => ({ active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, hoIn: 0, hoOut: 0, drops: 0, blocks: 0 }));
     this.loads = new Float32Array(C).fill(this.initialLoad());
     if (old) {
       old.cells.forEach((_, i) => {
@@ -182,7 +187,7 @@ export class SimEngine {
     this.log.clear();
     this.nextSampleT = 0;
     this.rng = mulberry32(this.settings.sim.seed);
-    for (const c of this.cells) Object.assign(c, { active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, hoIn: 0, hoOut: 0, drops: 0, blocks: 0 });
+    for (const c of this.cells) Object.assign(c, { active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, hoIn: 0, hoOut: 0, drops: 0, blocks: 0 });
     this.loads.fill(this.initialLoad());
     this.spawnUsers();
   }
@@ -246,6 +251,7 @@ export class SimEngine {
         rx: -Infinity,
         sinr: -Infinity,
         thrMbps: 0,
+        rank: 0,
         hoCand: -1,
         hoTimerMs: 0,
         rlfTimerMs: 0,
@@ -440,13 +446,19 @@ export class SimEngine {
 
   // ---------------------------------------------------------------- capacity
 
+  /** UE receive antennas, from its best supported RAT. */
+  ueRx(u: SimUser): number {
+    const us = this.settings.users;
+    return u.techMask & TECH_BIT.NR ? us.ueRxNr : u.techMask & TECH_BIT.LTE ? us.ueRxLte : 1;
+  }
+
   private canAdmit(i: number, kind: SessionKind, u: SimUser): boolean {
     const c = this.ctx.cells[i];
     const s = this.cells[i];
     if (s.active >= c.maxUsers) return false;
     if (c.tech === 'GSM') return s.tchUsed < c.tch;
     if (kind === 'voice') {
-      const r = ratePerRbMbps(c, u.sinr, this.settings.radio);
+      const r = ratePerRbMbps(c, u.sinr, this.settings.radio, this.ueRx(u));
       if (r <= 0) return false;
       return s.gbrRb + VOICE_GBR_MBPS / r <= c.rbs * GBR_ADMISSION_LIMIT;
     }
@@ -512,6 +524,7 @@ export class SimEngine {
     const us = this.settings.users;
     u.session = null;
     u.thrMbps = 0;
+    u.rank = 0;
     u.rlfTimerMs = 0;
     u.hoCand = -1;
     u.hoTimerMs = 0;
@@ -853,7 +866,10 @@ export class SimEngine {
       const st = this.cells[i];
       const list = perCell[i];
       if (c.tech === 'GSM') {
-        for (const u of list) u.thrMbps = u.session!.kind === 'data' ? GSM_SLOT_MBPS : 0;
+        for (const u of list) {
+          u.thrMbps = u.session!.kind === 'data' ? GSM_SLOT_MBPS : 0;
+          u.rank = 1;
+        }
         st.load = c.tch > 0 ? Math.min(1, list.length / c.tch) : 0;
         st.usedRb = 0;
         st.gbrRb = 0;
@@ -864,8 +880,11 @@ export class SimEngine {
       let free = c.rbs;
       let gbr = 0;
       const data: { u: SimUser; rate: number; need: number }[] = [];
+      const rbMbps = (c.rbBwHz * (1 - r.overhead)) / 1e6;
       for (const u of list) {
-        const rate = ratePerRbMbps(c, u.sinr, r);
+        const link = linkRank(c, u.sinr, this.ueRx(u), r);
+        const rate = link.se * rbMbps;
+        u.rank = rate > 0 ? link.rank : 0;
         if (rate <= 0) {
           u.thrMbps = 0;
           continue;
@@ -879,16 +898,21 @@ export class SimEngine {
           data.push({ u, rate, need: u.session!.demandMbps / rate });
         }
       }
+      // MU-MIMO: co-scheduled data users reuse the same RBs, so the data pool grows
+      // by the pairing gain (in RB-equivalents); physical RB use is divided back.
+      const mu = muMimoGain(c.maxMu, data.length, r.muMimoEfficiency);
       // Water-filling: equal RB share, capped by each user's need.
       data.sort((a, b) => a.need - b.need);
-      let remaining = free;
+      const pool = free * mu;
+      let remaining = pool;
       for (let k = 0; k < data.length; k++) {
         const share = remaining / (data.length - k);
         const alloc = Math.min(share, data[k].need);
         data[k].u.thrMbps = alloc * data[k].rate;
         remaining -= alloc;
       }
-      st.usedRb = c.rbs - remaining;
+      st.muGain = mu;
+      st.usedRb = gbr + (pool - remaining) / mu;
       st.gbrRb = gbr;
       st.load = c.rbs > 0 ? st.usedRb / c.rbs : 0;
       this.loads[i] = r.interferenceLoad === 'full' ? 1 : Math.max(r.minInterfererLoad, st.load);
