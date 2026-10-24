@@ -2,6 +2,7 @@ import { hexGrid, randomSites } from '../../planning/patterns';
 import { cellColor } from '../../radio/cells';
 import { antennaType, antennaTypesFor, bestRank, validAntennaFor } from '../../radio/mimo';
 import { modulation, modulationsFor, validModulationFor } from '../../radio/modulation';
+import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { channelNumber, gsmTrafficChannels, makeSector, makeStation, newId, PRESETS, presetByKey, rbBandwidthHz, resourceBlocks } from '../../radio/presets';
 import { verticalFootprint } from '../../radio/antenna';
 import { validity } from '../../radio/propagation';
@@ -302,6 +303,19 @@ export function networkPanel(app: App): HTMLElement {
             structural();
           })),
         ),
+        bs.tech === 'GSM'
+          ? ''
+          : h('label', { class: 'field', title: schedulerInfo(bs.scheduler)?.note ?? 'Uses the default from Radio → Scheduler' },
+              h('span', { class: 'lbl' }, 'Scheduler'),
+              h('span', { class: 'ctl' }, selectEl(
+                [['default', `Default (${schedulerInfo(store.scenario.settings.radio.scheduler)?.label ?? 'Round Robin'})`], ...SCHEDULERS.map((x) => [x.key, x.label] as [string, string])],
+                () => schedulerInfo(bs.scheduler)?.key ?? 'default',
+                (v) => {
+                  bs.scheduler = v === 'default' ? undefined : v;
+                  structural();
+                },
+              )),
+            ),
         h('label', { class: 'field', title: 'Highest downlink modulation the cell uses; caps the spectral efficiency per layer. Users only reach it at high SINR.' },
           h('span', { class: 'lbl' }, 'Max modulation'),
           h('span', { class: 'ctl' }, (() => {

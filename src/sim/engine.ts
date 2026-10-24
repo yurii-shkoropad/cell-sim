@@ -1,6 +1,7 @@
 import { LocalProjection } from '../geo';
 import { GSM_SLOT_MBPS, linkRank, ratePerRbMbps, rxLevel, sinrDb, type RadioContext } from '../radio/cells';
 import { muMimoGain } from '../radio/mimo';
+import { allocate, jainIndex, pfDiversityGainDb, schedulerInfo, type SchedulerKey } from './scheduler';
 import type { FixedUser, Mobility, Scenario, Settings, Tech, TrafficMode } from '../types';
 import { EventLog, emptyCounters, percentile, type KpiCounters, type KpiSample, type SimEventType } from './kpi';
 import { route, type Bounds, type RoadGraph, type TravelMode } from './roads';
@@ -82,10 +83,28 @@ export interface CellState {
   load: number;
   /** Current MU-MIMO capacity multiplier (1 = no pairing). */
   muGain: number;
+  /** Scheduler in effect on this cell. */
+  scheduler: SchedulerKey;
   hoIn: number;
   hoOut: number;
   drops: number;
   blocks: number;
+}
+
+/**
+ * Scheduler fairness: Jain's index of data users' satisfaction (throughput / demand)
+ * within each cell, averaged over cells with at least two data users. Cell-level,
+ * because a scheduler only shares resources inside its own cell.
+ */
+function meanCellFairness(byCell: Map<number, number[]>): number {
+  let sum = 0;
+  let n = 0;
+  for (const l of byCell.values()) {
+    if (l.length < 2) continue;
+    sum += jainIndex(l);
+    n++;
+  }
+  return n ? sum / n : 1;
 }
 
 /** Small, fast, seedable PRNG. */
@@ -152,7 +171,7 @@ export class SimEngine {
     const prevLoads = this.loads;
     const prevCells = this.cells;
     const keyToNew = new Map(ctx.cells.map((_, i) => [cellKey(ctx, i), i]));
-    this.cells = ctx.cells.map(() => ({ active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, hoIn: 0, hoOut: 0, drops: 0, blocks: 0 }));
+    this.cells = ctx.cells.map(() => ({ active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0 }));
     this.loads = new Float32Array(C).fill(this.initialLoad());
     if (old) {
       old.cells.forEach((_, i) => {
@@ -189,7 +208,7 @@ export class SimEngine {
     this.log.clear();
     this.nextSampleT = 0;
     this.rng = mulberry32(this.settings.sim.seed);
-    for (const c of this.cells) Object.assign(c, { active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, hoIn: 0, hoOut: 0, drops: 0, blocks: 0 });
+    for (const c of this.cells) Object.assign(c, { active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0 });
     this.loads.fill(this.initialLoad());
     this.spawnUsers();
   }
@@ -448,6 +467,11 @@ export class SimEngine {
   }
 
   // ---------------------------------------------------------------- capacity
+
+  /** Scheduler used by cell i: the station's override, else the global setting. */
+  cellScheduler(i: number): SchedulerKey {
+    return this.ctx.cells[i].scheduler ?? schedulerInfo(this.settings.radio.scheduler)?.key ?? 'rr';
+  }
 
   /** Default receive antennas for the device type (its best supported RAT). */
   defaultUeRx(u: SimUser): number {
@@ -891,6 +915,8 @@ export class SimEngine {
         this.loads[i] = 1;
         continue;
       }
+      const sched = this.cellScheduler(i);
+      st.scheduler = sched;
       let free = c.rbs;
       let gbr = 0;
       const data: { u: SimUser; rate: number; need: number }[] = [];
@@ -912,19 +938,27 @@ export class SimEngine {
           data.push({ u, rate, need: u.session!.demandMbps / rate });
         }
       }
+      // Channel-aware schedulers (PF, Max C/I) serve users near their fading peaks,
+      // raising the rate during their share (multi-user diversity, grows with users).
+      if ((sched === 'pf' || sched === 'maxci') && data.length > 1) {
+        const g = pfDiversityGainDb(data.length, r.pfDiversityEfficiency);
+        for (const d of data) {
+          const boosted = linkRank(c, d.u.sinr + g, this.ueRx(d.u), r);
+          d.rate = boosted.se * rbMbps;
+          d.u.rank = boosted.rank;
+          d.need = d.u.session!.demandMbps / d.rate;
+        }
+      }
       // MU-MIMO: co-scheduled data users reuse the same RBs, so the data pool grows
       // by the pairing gain (in RB-equivalents); physical RB use is divided back.
       const mu = muMimoGain(c.maxMu, data.length, r.muMimoEfficiency);
-      // Water-filling: equal RB share, capped by each user's need.
-      data.sort((a, b) => a.need - b.need);
       const pool = free * mu;
+      const alloc = allocate(sched, data, pool);
       let remaining = pool;
-      for (let k = 0; k < data.length; k++) {
-        const share = remaining / (data.length - k);
-        const alloc = Math.min(share, data[k].need);
-        data[k].u.thrMbps = alloc * data[k].rate;
-        remaining -= alloc;
-      }
+      data.forEach((d, k) => {
+        d.u.thrMbps = alloc[k] * d.rate;
+        remaining -= alloc[k];
+      });
       st.muGain = mu;
       st.usedRb = gbr + (pool - remaining) / mu;
       st.gbrRb = gbr;
@@ -940,6 +974,7 @@ export class SimEngine {
     let sinrSum = 0;
     let sinrN = 0;
     const thr: number[] = [];
+    const satByCell = new Map<number, number[]>();
     const byTech = { GSM: 0, LTE: 0, NR: 0 };
     for (const u of this.users) {
       if (u.serving >= 0) {
@@ -954,6 +989,11 @@ export class SimEngine {
       if (u.session?.kind === 'data') {
         data++;
         thr.push(u.thrMbps);
+        if (u.serving >= 0) {
+          const l = satByCell.get(u.serving) ?? [];
+          l.push(Math.min(1, u.thrMbps / Math.max(u.session.demandMbps, 1e-9)));
+          satByCell.set(u.serving, l);
+        }
       }
     }
     thr.sort((a, b) => a - b);
@@ -965,6 +1005,7 @@ export class SimEngine {
       meanThrMbps: thr.length ? thr.reduce((a, b) => a + b, 0) / thr.length : 0,
       p5ThrMbps: percentile(thr, 0.05),
       meanSinrDb: sinrN ? sinrSum / sinrN : 0,
+      fairness: meanCellFairness(satByCell),
       byTech,
     });
     if (this.samples.length > 3600) this.samples.shift();

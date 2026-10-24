@@ -62,7 +62,7 @@ per-RAT mobility thresholds (min level, A3 offset, hysteresis, TTT, B2, Qout, T3
   be filtered by operator and RAT, with a hover readout. Further overlays show sectors, users
   (coloured by state), user-to-cell links and the road graph.
 - **KPI tiles:** coverage, handover success, ping-pong, drop rate, block rate, mean and cell-edge
-  throughput, and mean SINR.
+  throughput, mean SINR, and fairness (Jain's index).
 - **Charts:** active sessions, users by serving RAT, throughput, mean SINR, an event timeline
   (10 s buckets), the most loaded cells and the SINR CDF.
 - **Event log:** handovers (intra and inter-RAT), handover failures, ping-pongs, drops, blocks and
@@ -84,7 +84,7 @@ The **Models** tab in the app has the full formulas. In short:
 | Throughput | Truncated Shannon (3GPP TR 36.942) per layer, per-RB rate × RBs |
 | Modulation | Per-station max (QPSK/16/64/256/1024QAM) caps per-layer SE at the 3GPP CQI table maxima |
 | Antennas / MIMO | SISO, 2T2R, 4T4R, 8T8R, massive MIMO 32T32R/64T64R: beamforming gain, rank adaptation (power split, Rx combining, precoding gain), MU-MIMO pairing |
-| Scheduler | GBR voice first, then max-min fair water-filling for data; GSM uses TCH timeslots (8·TRX − 2) |
+| Scheduler | GBR voice first, then a selectable data scheduler: Round Robin, Proportional Fair (analytical multi-user diversity gain), Max C/I, or equal throughput (max-min); global with per-station override. GSM uses TCH timeslots (8·TRX − 2) |
 | Mobility | Idle selection by RAT priority; A3 intra-RAT and B2 inter-RAT handover with TTT; RLF via Qout + T310 |
 | Traffic | Poisson arrivals, exponential durations and demand |
 | Movement | A* routes on the OSM walk and drive graphs (one-way aware), with random destinations and dwell |

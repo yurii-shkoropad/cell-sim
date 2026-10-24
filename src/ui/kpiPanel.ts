@@ -166,6 +166,7 @@ export function kpiPanel(app: App): HTMLElement {
       tile('Block rate', pct(k.blockedCapacity + k.blockedCoverage, k.voiceStarted + k.dataStarted), `${k.blockedCoverage} coverage · ${k.blockedCapacity} capacity`),
       tile('Mean DL', last ? `${fmt(last.meanThrMbps)} Mbps` : '—', last ? `edge ${fmt(last.p5ThrMbps, 2)} Mbps` : ''),
       tile('Mean SINR', last ? `${fmt(last.meanSinrDb)} dB` : '—', 'camped users'),
+      tile('Fairness', last && last.activeData ? fmt(last.fairness, 2) : '—', 'throughput ÷ demand, 1 = equal', 'Jain’s fairness index over data users’ satisfaction (throughput / demand)'),
     );
 
     const series = <T>(f: (x: (typeof s)[number]) => T) => s.map((p) => ({ x: p.t, y: f(p) as unknown as number }));

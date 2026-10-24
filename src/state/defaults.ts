@@ -23,6 +23,8 @@ export function defaultSettings(): Settings {
       gsmAdjacentRejectionDb: 18,
       precodingEfficiency: 0.5,
       muMimoEfficiency: 0.5,
+      scheduler: 'rr',
+      pfDiversityEfficiency: 0.5,
     },
     users: {
       count: 150,

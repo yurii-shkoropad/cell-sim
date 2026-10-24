@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import { GSM_SLOT_MBPS, linkModulation, linkRank, peakRateMbps, type CellRF } from '../radio/cells';
 import { modulation } from '../radio/modulation';
+import { schedulerInfo } from '../sim/scheduler';
 import { newId } from '../radio/presets';
 import { techMaskOf, techsOf, type SimUser } from '../sim/engine';
 import { EVENT_COLOR, EVENT_LABEL } from '../sim/kpi';
@@ -274,6 +275,7 @@ export class UserInspector {
           return `${m ? m.label : 'none (SINR too low)'}${cap}`;
         })() : '—'),
         kv('Carrier', c ? (c.tech === 'GSM' ? `${c.freqMHz} MHz · 200 kHz · ${c.tch} TCH` : `${c.freqMHz} MHz · ${c.rbs} RB (${fmt(c.occBwMHz, 1)} MHz used)`) : '—'),
+        kv('Scheduler', c && c.tech !== 'GSM' ? `${schedulerInfo(engine.cellScheduler(u.serving))?.label} · cell load ${Math.round(engine.cells[u.serving].load * 100)}%` : '—'),
         kv('Max possible', c ? maxPossible(c, engine.ueRx(u), store.scenario.settings.radio.overhead) : '—'),
         kv('Peak here', c && c.tech !== 'GSM' ? `${fmt(peakRateMbps(c, u.sinr, store.scenario.settings.radio, engine.ueRx(u)), 1)} Mbps (alone in the cell)` : '—'),
         kv('Throughput', s?.kind === 'data' ? `${fmt(u.thrMbps, 2)} of ${fmt(s.demandMbps, 2)} Mbps` : s ? `${fmt(u.thrMbps * 1000, 0)} kbps (GBR)` : '—'),

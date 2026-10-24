@@ -58,6 +58,8 @@ export interface BaseStation {
   antennaType?: string;
   /** Highest downlink modulation (see radio/modulation.ts); missing = 64QAM LTE / 256QAM NR. */
   maxModulation?: string;
+  /** Downlink scheduler override (see sim/scheduler.ts); missing = the global setting. */
+  scheduler?: string;
   /** Admission limit on simultaneously connected (active) users per sector. */
   maxUsers: number;
   sectors: Sector[];
@@ -149,6 +151,10 @@ export interface RadioSettings {
   precodingEfficiency: number;
   /** MU-MIMO pairing efficiency: each extra co-scheduled user adds this fraction of a cell's capacity. */
   muMimoEfficiency: number;
+  /** Default LTE/NR downlink scheduler: 'rr' | 'pf' | 'maxci' | 'maxmin'. */
+  scheduler: string;
+  /** Fraction (in dB) of the ideal Rayleigh multi-user diversity gain realised by Proportional Fair. */
+  pfDiversityEfficiency: number;
 }
 
 export interface SimSettings {

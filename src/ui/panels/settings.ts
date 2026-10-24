@@ -1,4 +1,5 @@
 import { newId } from '../../radio/presets';
+import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { TECHS, type FixedUser, type Mobility, type Tech, type TechThresholds, type TrafficMode } from '../../types';
 import type { App } from '../app';
 import { button, checkField, clear, h, numField, section, selectField } from '../dom';
@@ -234,6 +235,19 @@ export function radioPanel(app: App): HTMLElement {
           r.gsmAdjacentRejectionDb = v;
           set();
         }, { min: 0, max: 60, unit: 'dB' }),
+      ),
+      section('Scheduler (LTE / NR downlink)',
+        selectField('Default scheduler', SCHEDULERS.map((x) => [x.key, x.label] as [string, string]), () => (schedulerInfo(r.scheduler)?.key ?? 'rr'), (v) => {
+          r.scheduler = v;
+          set();
+          render();
+        }),
+        h('p', { class: 'hint' }, schedulerInfo(r.scheduler)?.note ?? ''),
+        numField('PF diversity efficiency', () => r.pfDiversityEfficiency, (v) => {
+          r.pfDiversityEfficiency = v;
+          set();
+        }, { min: 0, max: 1, step: 0.05, title: 'Share (in dB) of the ideal Rayleigh multi-user diversity gain 10·log10(H_n) that Proportional Fair achieves' }),
+        h('p', { class: 'hint' }, 'Stations can override the scheduler in the station editor. Compare the Fairness and throughput tiles to see the trade-off.'),
       ),
       section('Throughput (truncated Shannon)',
         h('p', { class: 'hint' }, 'The per-layer efficiency cap comes from each station’s max modulation (Network → station editor).'),

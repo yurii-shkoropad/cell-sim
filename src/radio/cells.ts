@@ -4,6 +4,7 @@ import { antennaAttenuation } from './antenna';
 import { antennaType, bestRank, validAntennaFor, type RankChoice } from './mimo';
 import { modulation, modulationForSe, validModulationFor, type Modulation, type ModulationKey } from './modulation';
 import { MIN_DISTANCE_KM, pathLossCoeffs } from './propagation';
+import { schedulerInfo, type SchedulerKey } from '../sim/scheduler';
 import { gsmTrafficChannels, occupiedBandwidthMHz, powerUnits, rbBandwidthHz, resourceBlocks } from './presets';
 import { seedFromString, shadowingDb } from './shadowing';
 
@@ -58,6 +59,8 @@ export interface CellRF {
   /** Highest modulation and its per-layer spectral-efficiency cap. */
   modulation: ModulationKey;
   seMax: number;
+  /** Station's scheduler override, or null to use the global setting. */
+  scheduler: SchedulerKey | null;
 }
 
 export interface RadioContext {
@@ -139,6 +142,7 @@ export function buildRadioContext(scn: Scenario): RadioContext {
           const m = modulation(validModulationFor(bs.tech, bs.maxModulation));
           return { modulation: m.key, seMax: m.seMax };
         })(),
+        scheduler: schedulerInfo(bs.scheduler)?.key ?? null,
       });
     });
   }

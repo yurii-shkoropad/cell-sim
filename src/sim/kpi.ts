@@ -59,6 +59,8 @@ export interface KpiSample {
   meanThrMbps: number;
   p5ThrMbps: number;
   meanSinrDb: number;
+  /** Mean per-cell Jain's index over data users' satisfaction (throughput / demand). */
+  fairness: number;
   byTech: { GSM: number; LTE: number; NR: number };
 }
 

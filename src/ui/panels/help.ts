@@ -40,6 +40,13 @@ const HTML = `
 <ul>
 <li><b>GSM</b>: <code>8·TRX − 2</code> traffic channels per sector, one per voice call. A call is blocked when none is free.</li>
 <li><b>LTE/NR</b>: voice is GBR (30 kbit/s) and served first, with admission while GBR RBs stay at or below 90% of the cell. Data shares the remaining RBs by max-min fair water-filling, each user capped by its demand.</li>
+<li><b>Data scheduler</b> (Radio → Scheduler, overridable per station) splits the RBs left after voice:
+  <ul>
+  <li><b>Round Robin:</b> equal RB share per user, channel-blind; unused shares are redistributed (work-conserving).</li>
+  <li><b>Proportional Fair:</b> the same equal time share, but each user is served near its fading peaks. The model has no fast fading, so this is applied analytically as an SINR boost of <code>η<sub>PF</sub>·10·log₁₀(H<sub>n</sub>)</code>, where H<sub>n</sub> = Σ<sub>k=1..n</sub> 1/k is the Rayleigh multi-user diversity gain for n competing users (Choi &amp; Andrews 2007).</li>
+  <li><b>Max C/I:</b> RBs go to the highest-rate users first, each up to its demand. It is channel-aware like PF, so it gets the same diversity boost.</li>
+  <li><b>Equal throughput (max-min):</b> RBs are set so every user gets the same rate T, capped by demand: <code>Σ min(need<sub>i</sub>, T/rate<sub>i</sub>) = RBs</code>.</li>
+  </ul></li>
 <li>Every sector also has a <i>max active users</i> admission limit.</li>
 </ul>
 
@@ -62,6 +69,7 @@ const HTML = `
 <li>HO success = successful / attempted handovers</li>
 <li>Coverage = users with a serving cell / all users</li>
 <li>Cell-edge throughput = 5th percentile of active data users</li>
+<li>Fairness = Jain's index <code>(Σx)² / (n·Σx²)</code> over data users' satisfaction x = throughput / demand, computed per cell and averaged over cells with ≥ 2 data users (1 = all equally served). It is per cell because a scheduler only shares its own cell's resources.</li>
 </ul>
 </section>`;
 
