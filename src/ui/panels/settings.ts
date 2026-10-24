@@ -383,6 +383,8 @@ export function layersPanel(app: App): HTMLElement {
     // Operator list may have changed.
     if (root.isConnected) render();
   });
+  // Filters can also change from elsewhere (auto-follow on new stations, legend button).
+  store.on('layers', render);
   return root;
 }
 

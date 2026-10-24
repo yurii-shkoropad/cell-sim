@@ -67,6 +67,30 @@ export class Store {
   addStations(list: BaseStation[]) {
     this.scenario.stations.push(...list);
     this.emit('network');
+    this.revealStations(list);
+  }
+
+  /** True when the coverage layer's operator/RAT filter shows this station. */
+  isVisible(bs: BaseStation): boolean {
+    const l = this.layers;
+    return (l.operatorFilter === 'all' || l.operatorFilter === bs.operatorId) && (l.techFilter === 'all' || l.techFilter === bs.tech);
+  }
+
+  /** Point the layer filter at newly added stations if it would hide all of them. */
+  private revealStations(list: BaseStation[]) {
+    if (!list.length || list.some((s) => this.isVisible(s))) return;
+    const ops = new Set(list.map((s) => s.operatorId));
+    const techs = new Set(list.map((s) => s.tech));
+    this.layers.operatorFilter = ops.size === 1 ? list[0].operatorId : 'all';
+    this.layers.techFilter = techs.size === 1 ? list[0].tech : 'all';
+    this.emit('layers');
+  }
+
+  /** Show every operator and RAT on the coverage layer. */
+  showAllLayers() {
+    this.layers.operatorFilter = 'all';
+    this.layers.techFilter = 'all';
+    this.emit('layers');
   }
 
   removeStation(id: string) {

@@ -188,6 +188,30 @@ export class HeatmapLayer {
     }
     el.style.display = '';
     const lay = this.store.layers;
+    // Nothing matches the filter: say so instead of drawing an empty map.
+    const stations = this.store.scenario.stations.filter((s) => s.enabled);
+    if (stations.length && !stations.some((s) => this.store.isVisible(s))) {
+      const opName = lay.operatorFilter === 'all' ? 'any operator' : (this.store.scenario.operators.find((o) => o.id === lay.operatorFilter)?.name ?? '?');
+      const head = document.createElement('div');
+      head.className = 'legend-title';
+      head.textContent = `No ${lay.techFilter === 'all' ? '' : lay.techFilter + ' '}cells for ${opName}`;
+      const note = document.createElement('div');
+      note.className = 'legend-note';
+      note.textContent = 'The coverage layer is filtered (Layers → Operator / Technology).';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn';
+      btn.style.marginTop = '6px';
+      btn.textContent = 'Show all operators & RATs';
+      btn.onclick = () => this.store.showAllLayers();
+      L.DomEvent.disableClickPropagation(el);
+      el.append(head, note, btn);
+      return;
+    }
+    if (!stations.length) {
+      el.innerHTML = '<div class="legend-title">No stations on air</div><div class="legend-note">Add sites in the Network tab.</div>';
+      return;
+    }
     const op = lay.operatorFilter === 'all' ? 'All operators' : (this.store.scenario.operators.find((o) => o.id === lay.operatorFilter)?.name ?? '');
     const tech = lay.techFilter === 'all' ? 'all RATs' : lay.techFilter;
     const head = document.createElement('div');

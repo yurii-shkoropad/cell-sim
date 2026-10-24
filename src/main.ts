@@ -100,6 +100,10 @@ const scheduleRebuild = () => {
 store.on('network', scheduleRebuild);
 store.on('settings', scheduleRebuild);
 store.on('selection', () => mapView.renderStations());
+store.on('layers', () => {
+  heatmap.schedule(0);
+  mapView.renderSectors();
+});
 mapView.onStationMoved = () => {
   store.emit('network');
   store.emit('selection');
