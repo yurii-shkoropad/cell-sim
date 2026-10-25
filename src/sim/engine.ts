@@ -216,6 +216,11 @@ export class SimEngine {
   // ---------------------------------------------------------------- users
 
   private pickOperator(): number {
+    const only = this.settings.users.operatorFilter;
+    if (only && only !== 'all') {
+      const i = this.scn.operators.findIndex((o) => o.id === only);
+      if (i >= 0) return i;
+    }
     const ops = this.opShares;
     const total = ops.reduce((a, b) => a + b, 0) || 1;
     let r = this.rng() * total;

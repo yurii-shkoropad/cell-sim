@@ -132,4 +132,16 @@ describe('SimEngine', () => {
     for (let i = 0; i < 20; i++) eng.step();
     expect(eng.samples.at(-1)!.coverage).toBe(0);
   });
+
+  it('population operator filter puts every random user on one operator', () => {
+    const eng = makeEngine((s) => {
+      s.settings.users.operatorFilter = 'op3';
+      s.fixedUsers = [];
+    });
+    expect(eng.users.length).toBeGreaterThan(50);
+    expect(eng.users.every((u) => u.opIdx === 2)).toBe(true);
+    eng.settings.users.operatorFilter = 'all';
+    eng.reset();
+    expect(new Set(eng.users.map((u) => u.opIdx)).size).toBe(3);
+  });
 });

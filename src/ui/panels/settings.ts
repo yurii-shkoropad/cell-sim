@@ -123,6 +123,10 @@ export function usersPanel(app: App): HTMLElement {
           u.count = Math.round(v);
           set();
         }, { min: 0, max: 5000, step: 10, title: 'Randomly generated users (fixed users come on top)' }),
+        selectField('Operator', [['all', 'All operators (by market share)'], ...store.scenario.operators.map((o) => [o.id, `Only ${o.name}`] as [string, string])], () => (store.scenario.operators.some((o) => o.id === u.operatorFilter) ? u.operatorFilter : 'all'), (v) => {
+          u.operatorFilter = v;
+          set();
+        }, 'Which operator the random users subscribe to; applied when users respawn'),
         numField('Static users', () => u.staticShare, (v) => {
           u.staticShare = v;
           set();

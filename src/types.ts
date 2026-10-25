@@ -108,6 +108,8 @@ export interface FixedUser {
 
 export interface UserSettings {
   count: number;
+  /** 'all': operators by market share; otherwise every random user subscribes to this operator id. */
+  operatorFilter: string;
   /** Fraction of random users that never move (indoor / stationary). */
   staticShare: number;
   /** Fraction of moving users that are pedestrians (rest are vehicles). */

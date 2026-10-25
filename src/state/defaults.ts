@@ -30,6 +30,7 @@ export function defaultSettings(): Settings {
     },
     users: {
       count: 150,
+      operatorFilter: 'all',
       staticShare: 0.15,
       pedestrianShare: 0.6,
       pedSpeedMin: 0.8,
