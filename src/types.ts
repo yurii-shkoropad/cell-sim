@@ -90,8 +90,8 @@ export type Mobility = 'walk' | 'drive' | 'static';
 /** 'random': Poisson sessions; 'voice'/'data': continuous session (re-established after drops/blocks); 'idle': never starts sessions. */
 export type TrafficMode = 'random' | 'voice' | 'data' | 'idle';
 
-/** Manually placed user, persisted in the scenario. */
-export interface FixedUser {
+/** A simulated user, persisted in the scenario (its start position, device and behaviour). */
+export interface UserSpec {
   id: string;
   name: string;
   lat: number;
@@ -104,11 +104,17 @@ export interface FixedUser {
   demandMbps: number | null;
   /** Phone receive antennas; null/missing = default for its device type. */
   ueRx?: number | null;
+  /** Fixed speed, km/h; null/missing = random within the Users settings range. */
+  speedKmh?: number | null;
 }
 
+/**
+ * Population template used by "Add users" (count, operator, mix, devices) plus
+ * the speed ranges and traffic rates that apply to all users.
+ */
 export interface UserSettings {
   count: number;
-  /** 'all': operators by market share; otherwise every random user subscribes to this operator id. */
+  /** 'all': operators by market share; otherwise added users subscribe to this operator id. */
   operatorFilter: string;
   /** Fraction of random users that never move (indoor / stationary). */
   staticShare: number;
@@ -185,7 +191,9 @@ export interface Scenario {
   center: { lat: number; lng: number; zoom: number };
   operators: Operator[];
   stations: BaseStation[];
-  /** Manually placed users (static probes etc.); optional for older files. */
-  fixedUsers?: FixedUser[];
+  /** All simulated users; missing in older files (generated from the settings on load). */
+  users?: UserSpec[];
+  /** Older files: manually placed users, merged into `users` on load. */
+  fixedUsers?: UserSpec[];
   settings: Settings;
 }

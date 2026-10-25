@@ -50,8 +50,18 @@ frequency (the ARFCN, EARFCN or NR-ARFCN is shown), PCI or BSIC, and on/off.
 - **OSM towers:** masts and towers tagged for communication, via Overpass.
 - **Scenario JSON.**
 
-**Users and traffic:** number of users, pedestrian/vehicle split and speeds, device RAT capability
-shares, voice and data arrival rates, durations and data demand.
+**Users:** every user is saved in the scenario with its start position, operator, device (RATs,
+receive antennas), mobility (static, pedestrian or vehicle), traffic and demand. The **Users** tab has:
+- a list of all users with live state, serving cell and throughput. Click a row to open the user;
+  **×** deletes it.
+- filters (text, operator, mobility, state), multi-select (selected users are highlighted on the map)
+  and batch editing of operator, mobility, traffic, antennas, devices and demand, plus starting or
+  ending sessions and deleting the selection.
+- **Add users** from a template, either as a batch in the current view, in a rectangle or circle
+  picked on the map, or one at a time by clicking.
+
+**Reset** restarts the simulation with the same users. Global settings cover the speed ranges,
+default antennas, and the Poisson traffic rates for users with random traffic.
 
 **Radio:** environment (urban large/medium, suburban, rural), path-loss model, UE height, noise
 figure, shadowing σ and decorrelation distance, interferer-load model, Shannon parameters, and

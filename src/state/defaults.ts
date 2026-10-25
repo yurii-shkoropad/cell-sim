@@ -1,5 +1,6 @@
 import { hexGrid } from '../planning/patterns';
 import { makeStation, presetByKey } from '../radio/presets';
+import { areaAround, generateUsers, mulberry32, templateFromSettings } from '../sim/population';
 import type { Operator, Scenario, Settings } from '../types';
 
 /** Lviv Polytechnic National University, main building. */
@@ -88,15 +89,19 @@ export function defaultScenario(): Scenario {
   const lcLte = hexGrid({ centerLat: c.lat + 0.003, centerLng: c.lng + 0.002, isdM: 1200, rings: 1, sectors: 3, azimuthOffset: 15, operatorId: 'op3', preset: { ...lte1800, freqMHz: 1860, bandwidthMHz: 15 }, namePrefix: 'LC-L', pciStart: 120 }).slice(0, 4);
   for (const bs of lcLte) bs.bandwidthMHz = 15;
 
-  return {
+  const scn: Scenario = {
     version: 1,
     name: 'Lviv Polytechnic demo',
     center: { ...c },
     operators: defaultOperators(),
     stations: [...ksLte, ...ksGsm, ...ksNr, ...vfLte, ...lcLte],
-    fixedUsers: [
-      { id: 'fu-main', name: 'Main building probe', lat: 49.8352, lng: 24.0152, operatorId: 'op1', techs: ['GSM', 'LTE', 'NR'], mobility: 'static', traffic: 'data', demandMbps: 10 },
-    ],
+    users: [],
     settings: defaultSettings(),
   };
+  // 150 users (seeded, so the demo is the same every time) plus a static probe in the main building.
+  scn.users = [
+    { id: 'fu-main', name: 'Main building probe', lat: 49.8352, lng: 24.0152, operatorId: 'op1', techs: ['GSM', 'LTE', 'NR'], mobility: 'static', traffic: 'data', demandMbps: 10 },
+    ...generateUsers(scn, templateFromSettings(scn), areaAround(c.lat, c.lng), mulberry32(scn.settings.sim.seed)),
+  ];
+  return scn;
 }

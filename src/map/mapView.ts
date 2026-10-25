@@ -4,6 +4,7 @@ import { destination } from '../geo';
 import { verticalFootprint } from '../radio/antenna';
 import type { RadioContext } from '../radio/cells';
 import type { SimEngine, SimUser } from '../sim/engine';
+import type { Zone } from '../sim/population';
 import type { RoadGraph } from '../sim/roads';
 import type { Store } from '../state/store';
 import type { BuildingSet } from '../radio/buildings';
@@ -18,11 +19,11 @@ const BUILDING_RAMP: [number, string][] = [[6, '#b7d3f6'], [12, '#86b6ef'], [18,
 export const buildingColor = (h: number) => BUILDING_RAMP.find(([max]) => h < max)![1];
 export const BUILDING_LEGEND = BUILDING_RAMP;
 
-/** Fill = state (idle / voice / data / no service); outline = mobility; fixed users are larger squares-ish. */
+/** Fill = state (idle / voice / data / no service); outline = mobility; active users are larger. */
 function userStyle(u: SimUser): L.CircleMarkerOptions {
   const fill = u.serving < 0 ? '#000' : u.session?.kind === 'voice' ? '#1565c0' : u.session?.kind === 'data' ? '#2e7d32' : '#9e9e9e';
   const stroke = u.mode === 'drive' ? '#222' : u.mode === 'static' ? '#f2b705' : '#fff';
-  return { fillColor: fill, color: stroke, weight: u.mode === 'static' ? 2 : 1, radius: (u.session ? 5 : 3.5) + (u.fixedId ? 2 : 0) };
+  return { fillColor: fill, color: stroke, weight: u.mode === 'static' ? 2 : 1, radius: u.session ? 5 : 3.5 };
 }
 /**
  * Keep clicks inside a floating panel from reaching the map. Leaflet's own
@@ -54,8 +55,20 @@ export class MapView {
   private markers = new Map<string, L.Marker>();
   private highlight: L.CircleMarker | null = null;
   private ctx: RadioContext | null = null;
-  /** What a click on the empty map places: a base station, a static user, or nothing. */
-  placeMode: 'site' | 'user' | null = null;
+  /**
+   * What a click on the empty map does: place a base station or a user, pick a
+   * zone for batch-adding users (rectangle: two corners; circle: its centre), or nothing.
+   */
+  placeMode: 'site' | 'user' | 'zone-rect' | 'zone-circle' | null = null;
+  /** Called when a zone is picked; the mode then ends. */
+  onZone: (z: Zone) => void = () => {};
+  /** Radius used by the circle zone preview, m. */
+  zoneRadiusM = 300;
+  private zoneStart: L.LatLng | null = null;
+  private zonePreview: L.Path | null = null;
+  /** Users selected in the Users list (spec ids), drawn with a highlight ring. */
+  highlighted = new Set<string>();
+  private hlLayer = L.layerGroup();
   private placeListeners: (() => void)[] = [];
   onAddSite: (lat: number, lng: number) => void = () => {};
   onAddUser: (lat: number, lng: number) => void = () => {};
@@ -101,8 +114,25 @@ export class MapView {
       if (this.suppressClick) return;
       if (this.placeMode === 'site') this.onAddSite(e.latlng.lat, e.latlng.lng);
       else if (this.placeMode === 'user') this.onAddUser(e.latlng.lat, e.latlng.lng);
-      else store.select(null);
+      else if (this.placeMode === 'zone-circle') {
+        const c = e.latlng;
+        this.setPlaceMode(null);
+        this.onZone({ kind: 'circle', lat: c.lat, lng: c.lng, radiusM: this.zoneRadiusM });
+      } else if (this.placeMode === 'zone-rect') {
+        if (!this.zoneStart) this.zoneStart = e.latlng;
+        else {
+          const b = L.latLngBounds(this.zoneStart, e.latlng);
+          this.setPlaceMode(null);
+          this.onZone({ kind: 'rect', south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() });
+        }
+      } else store.select(null);
     });
+    // Live preview of the zone being picked.
+    this.map.on('mousemove', (e: L.LeafletMouseEvent) => {
+      if (this.placeMode === 'zone-circle') this.showZonePreview(L.circle(e.latlng, { radius: this.zoneRadiusM }));
+      else if (this.placeMode === 'zone-rect' && this.zoneStart) this.showZonePreview(L.rectangle(L.latLngBounds(this.zoneStart, e.latlng)));
+    });
+    this.hlLayer.addTo(this.map);
     this.map.on('zoomend', () => this.renderSectors());
     this.map.on('moveend', () => {
       if (this.store.layers.showBuildings) this.renderBuildings();
@@ -128,9 +158,12 @@ export class MapView {
    * mode: base stations can be dragged; outside it they are fixed, so viewing
    * the map never moves a site by accident.
    */
-  setPlaceMode(mode: 'site' | 'user' | null) {
+  setPlaceMode(mode: MapView['placeMode']) {
     if (this.placeMode === mode) return;
     this.placeMode = mode;
+    this.zoneStart = null;
+    this.zonePreview?.remove();
+    this.zonePreview = null;
     this.map.getContainer().classList.toggle('add-mode', mode !== null);
     this.refreshBanner();
     for (const m of this.markers.values()) this.applyDraggable(m);
@@ -144,10 +177,15 @@ export class MapView {
     if (!mode) return;
     this.bannerText.innerHTML = '';
     const title = document.createElement('b');
-    title.textContent = this.placeHint[mode]();
     const sub = document.createElement('span');
     sub.className = 'place-sub';
-    sub.textContent = mode === 'site' ? 'Click the map to add · drag sites to move · Esc to finish' : 'Click the map to add · Esc to finish';
+    if (mode === 'zone-rect' || mode === 'zone-circle') {
+      title.textContent = mode === 'zone-rect' ? 'Pick a rectangle for the new users' : `Pick the centre of a ${this.zoneRadiusM} m circle for the new users`;
+      sub.textContent = mode === 'zone-rect' ? 'Click one corner, then the opposite corner · Esc to cancel' : 'Click the map · Esc to cancel';
+    } else {
+      title.textContent = this.placeHint[mode]();
+      sub.textContent = mode === 'site' ? 'Click the map to add · drag sites to move · Esc to finish' : 'Click the map to add · Esc to finish';
+    }
     this.bannerText.append(title, sub);
   }
 
@@ -332,6 +370,7 @@ export class MapView {
         m.setStyle(userStyle(u));
       }
       this.renderSelection(engine);
+      this.renderHighlights(engine);
     }
 
     // Links: active users → serving cell (Layers option), plus every user camped
@@ -362,6 +401,22 @@ export class MapView {
       k++;
     }
     while (this.linkLines.length > k) this.linkLines.pop()!.remove();
+  }
+
+  private showZonePreview(p: L.Path) {
+    this.zonePreview?.remove();
+    p.setStyle({ color: '#2a78d6', weight: 2, dashArray: '6 4', fillOpacity: 0.08, interactive: false });
+    this.zonePreview = p.addTo(this.map);
+  }
+
+  /** Rings around users selected in the Users list. */
+  renderHighlights(engine: SimEngine) {
+    this.hlLayer.clearLayers();
+    if (!this.highlighted.size || !this.store.layers.showUsers) return;
+    for (const u of engine.users) {
+      if (!u.specId || !this.highlighted.has(u.specId)) continue;
+      L.circleMarker([u.lat, u.lng], { renderer: this.renderer, radius: 8, weight: 2, color: '#2a78d6', fill: false, interactive: false }).addTo(this.hlLayer);
+    }
   }
 
   /** Highlight ring around the user shown in the inspector. */

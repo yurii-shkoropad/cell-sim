@@ -2,7 +2,7 @@ import { LocalProjection } from '../geo';
 import { GSM_SLOT_MBPS, linkRank, ratePerRbMbps, rxLevel, sinrDb, type RadioContext } from '../radio/cells';
 import { muMimoGain } from '../radio/mimo';
 import { allocate, jainIndex, pfDiversityGainDb, schedulerInfo, type SchedulerKey } from './scheduler';
-import type { FixedUser, Mobility, Scenario, Settings, Tech, TrafficMode } from '../types';
+import type { Mobility, Scenario, Settings, Tech, TrafficMode, UserSpec } from '../types';
 import { EventLog, emptyCounters, percentile, type KpiCounters, type KpiSample, type SimEventType } from './kpi';
 import { route, type Bounds, type RoadGraph, type TravelMode } from './roads';
 
@@ -30,8 +30,10 @@ export interface Session {
 
 export interface SimUser {
   id: number;
-  /** Set for users placed manually and persisted in the scenario. */
-  fixedId: string | null;
+  /** The scenario user entry this live user was created from. */
+  specId: string | null;
+  /** Speed set explicitly (not re-drawn on each trip). */
+  speedFixed: boolean;
   name: string | null;
   opIdx: number;
   techMask: number;
@@ -156,7 +158,6 @@ export class SimEngine {
     const old = this.ctx;
     this.settings = scn.settings;
     this.scn = scn;
-    this.opShares = scn.operators.map((o) => Math.max(0, o.marketShare));
     this.proj = new LocalProjection(ctx.lat0, ctx.lng0);
     this.ctx = ctx;
     const C = ctx.cells.length;
@@ -215,38 +216,13 @@ export class SimEngine {
 
   // ---------------------------------------------------------------- users
 
-  private pickOperator(): number {
-    const only = this.settings.users.operatorFilter;
-    if (only && only !== 'all') {
-      const i = this.scn.operators.findIndex((o) => o.id === only);
-      if (i >= 0) return i;
-    }
-    const ops = this.opShares;
-    const total = ops.reduce((a, b) => a + b, 0) || 1;
-    let r = this.rng() * total;
-    for (let i = 0; i < ops.length; i++) if ((r -= ops[i]) < 0) return i;
-    return 0;
-  }
-
-  opShares: number[] = [1];
-
   private nextUserId = 0;
 
+  /** (Re)create the live users from the scenario's user list, at their start positions. */
   spawnUsers() {
-    const us = this.settings.users;
     this.users = [];
     this.nextUserId = 0;
-    for (let k = 0; k < us.count; k++) {
-      const mode: Mobility = this.rng() < us.staticShare ? 'static' : this.rng() < us.pedestrianShare ? 'walk' : 'drive';
-      let techMask = TECH_BIT.GSM;
-      const r = this.rng();
-      if (r < us.lteCapableShare) techMask |= TECH_BIT.LTE;
-      if (r < us.nrCapableShare) techMask |= TECH_BIT.NR;
-      const u = this.newUser(this.pickOperator(), techMask, mode);
-      this.placeAtRandom(u);
-      this.users.push(u);
-    }
-    for (const f of this.scn.fixedUsers ?? []) this.addFixedUser(f);
+    for (const spec of this.scn.users ?? []) this.addUser(spec);
     this.recountOccupancy();
   }
 
@@ -254,7 +230,8 @@ export class SimEngine {
     const us = this.settings.users;
     return {
         id: this.nextUserId++,
-        fixedId: null,
+        specId: null,
+        speedFixed: false,
         name: null,
         opIdx,
         techMask,
@@ -353,8 +330,8 @@ export class SimEngine {
       if (p && p.length > 1) {
         u.path = p;
         u.pathIdx = 1;
-        // Fixed users keep the speed they were given.
-        if (!u.fixedId) u.speed = this.randSpeed(u.mode);
+        // Users with a set speed keep it; others draw a new one per trip.
+        if (!u.speedFixed) u.speed = this.randSpeed(u.mode);
         return;
       }
     }
@@ -754,11 +731,15 @@ export class SimEngine {
     return Math.max(0, this.scn.operators.findIndex((o) => o.id === operatorId));
   }
 
-  /** Add a manually placed user (from the scenario's fixed users). */
-  addFixedUser(f: FixedUser): SimUser {
+  /** Add a live user for a scenario user entry. */
+  addUser(f: UserSpec): SimUser {
     const u = this.newUser(this.opIndex(f.operatorId), techMaskOf(f.techs), f.mobility);
-    u.fixedId = f.id;
+    u.specId = f.id;
     u.name = f.name;
+    if (f.speedKmh != null && f.mobility !== 'static') {
+      u.speed = f.speedKmh / 3.6;
+      u.speedFixed = true;
+    }
     u.traffic = f.traffic;
     u.demandMbps = f.demandMbps;
     u.ueRxOverride = f.ueRx ?? null;
@@ -767,6 +748,17 @@ export class SimEngine {
     this.users.push(u);
     this.moveUserTo(u, f.lat, f.lng, true);
     return u;
+  }
+
+  userBySpec(specId: string): SimUser | undefined {
+    return this.users.find((u) => u.specId === specId);
+  }
+
+  /** Remove the live users of these scenario entries. */
+  removeUsersBySpec(ids: Set<string>) {
+    this.users = this.users.filter((u) => !u.specId || !ids.has(u.specId));
+    this.recountOccupancy();
+    this.schedule();
   }
 
   /** Remove every user (sessions end, cells free up); KPI history is kept. */

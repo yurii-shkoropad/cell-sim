@@ -1,7 +1,8 @@
 import { HeatmapLayer } from './map/heatmap';
 import { MapView } from './map/mapView';
 import { buildRadioContext, type RadioContext } from './radio/cells';
-import { SimEngine } from './sim/engine';
+import { SimEngine, techMaskOf, techsOf, type SimUser } from './sim/engine';
+import type { UserSpec } from './types';
 import { fetchOverpass, loadBundledRoads, loadRoadGraph, type Bounds, type RoadGraph } from './sim/roads';
 import { BuildingModel } from './radio/buildingModel';
 import { buildingsFromBundle, buildingsFromOverpass, type BuildingSet, type BundledBuildings } from './radio/buildings';
@@ -16,7 +17,8 @@ import { UserInspector } from './ui/userInspector';
 import { dataPanel, planningPanel } from './ui/panels/data';
 import { helpPanel } from './ui/panels/help';
 import { networkPanel } from './ui/panels/network';
-import { layersPanel, radioPanel, usersPanel } from './ui/panels/settings';
+import { layersPanel, radioPanel } from './ui/panels/settings';
+import { usersPanel } from './ui/panels/users';
 
 const MAX_ROAD_AREA_KM2 = 40;
 
@@ -29,7 +31,7 @@ const stepBtn = button('Step', () => {
   liveTick();
   mapView.renderUsers(engine);
 }, '', 'Advance one time step');
-const resetBtn = button('Reset', () => resetSim(), '', 'Respawn users and clear KPIs');
+const resetBtn = button('Reset', () => resetSim(), '', 'Restart the simulation: users back to their start positions, KPIs cleared')
 let speed = 5;
 const speedSel = selectEl(
   [['1', '×1'], ['2', '×2'], ['5', '×5'], ['10', '×10'], ['30', '×30'], ['60', '×60']],
@@ -115,15 +117,51 @@ const app: App = {
   buildings: () => buildings,
   loadBuildings,
   respawnUsers: () => resetSim(),
-  deleteAllUsers: () => {
-    inspector.close();
-    store.scenario.settings.users.count = 0;
-    store.scenario.fixedUsers = [];
-    engine.removeAllUsers();
-    store.emit('users'); // Users panel re-renders (count field, fixed-user list)
-    store.emit('settings');
-    mapView.renderUsers(engine);
-    liveTick();
+  deleteAllUsers: () => app.deleteUsers((store.scenario.users ?? []).map((u) => u.id)),
+  addUsers: (specs) => {
+    (store.scenario.users ??= []).push(...specs);
+    for (const s of specs) engine.addUser(s);
+    usersChanged();
+  },
+  deleteUsers: (ids) => {
+    const set = new Set(ids);
+    const open = inspector.userId !== null ? engine.userById(inspector.userId) : undefined;
+    if (open?.specId && set.has(open.specId)) inspector.close();
+    store.scenario.users = (store.scenario.users ?? []).filter((u) => !set.has(u.id));
+    engine.removeUsersBySpec(set);
+    for (const id of ids) mapView.highlighted.delete(id);
+    usersChanged();
+  },
+  editUsers: (ids, patch) => {
+    const set = new Set(ids);
+    for (const spec of store.scenario.users ?? []) {
+      if (!set.has(spec.id)) continue;
+      Object.assign(spec, patch);
+      const u = engine.userBySpec(spec.id);
+      if (u) applySpec(u, spec, patch);
+    }
+    usersChanged();
+  },
+  saveUser: (u) => {
+    const spec = u.specId ? store.scenario.users?.find((x) => x.id === u.specId) : undefined;
+    if (!spec) return;
+    Object.assign(spec, {
+      name: u.name ?? spec.name,
+      lat: u.lat,
+      lng: u.lng,
+      operatorId: store.scenario.operators[u.opIdx]?.id ?? spec.operatorId,
+      techs: techsOf(u.techMask),
+      mobility: u.mode,
+      traffic: u.traffic,
+      demandMbps: u.demandMbps,
+      ueRx: u.ueRxOverride,
+      speedKmh: u.speedFixed ? Math.round(u.speed * 3.6) : null,
+    });
+    store.emit('users');
+  },
+  setUserSelection: (ids) => {
+    mapView.highlighted = new Set(ids);
+    mapView.renderHighlights(engine);
   },
   openUser: (id) => {
     // One inspector at a time: showing a user closes the station panel.
@@ -180,6 +218,32 @@ mapView.onUserDrag = (id, lat, lng, final) => {
     mapView.renderUsers(engine);
   }
 };
+
+/** After adding / removing / editing users: persist, refresh map, list and KPIs. */
+function usersChanged() {
+  store.emit('users');
+  mapView.renderUsers(engine);
+  if (inspector.userId !== null) inspector.renderEdit();
+  liveTick();
+}
+
+/** Apply edited fields of a user entry to its live user. */
+function applySpec(u: SimUser, spec: UserSpec, patch: Partial<UserSpec>) {
+  if (patch.operatorId !== undefined) engine.setOperator(u, engine.opIndex(spec.operatorId));
+  if (patch.techs !== undefined) engine.setTechMask(u, techMaskOf(spec.techs));
+  if (patch.mobility !== undefined) engine.setMobility(u, spec.mobility);
+  if (patch.traffic !== undefined) engine.setTraffic(u, spec.traffic);
+  if (patch.demandMbps !== undefined) {
+    u.demandMbps = spec.demandMbps;
+    if (u.session?.kind === 'data' && spec.demandMbps !== null) u.session.demandMbps = spec.demandMbps;
+  }
+  if (patch.ueRx !== undefined) engine.setUeRx(u, spec.ueRx ?? null);
+  if (patch.speedKmh !== undefined) {
+    u.speedFixed = spec.speedKmh != null;
+    if (spec.speedKmh != null && u.mode !== 'static') u.speed = spec.speedKmh / 3.6;
+  }
+  if (patch.name !== undefined) u.name = spec.name;
+}
 
 // ---------------------------------------------------------------- tabs
 const tabs: [string, string, () => HTMLElement][] = [

@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { buildRadioContext } from '../radio/cells';
 import { defaultScenario } from '../state/defaults';
 import { SimEngine } from './engine';
+import { areaAround, generateUsers, mulberry32, templateFromSettings } from './population';
+
+/** Replace the scenario's users with n generated ones (seeded). */
+function withUsers(s: ReturnType<typeof defaultScenario>, n: number, staticShare?: number) {
+  const tpl = { ...templateFromSettings(s), count: n, ...(staticShare !== undefined ? { staticShare } : {}) };
+  s.users = generateUsers(s, tpl, areaAround(s.center.lat, s.center.lng), mulberry32(7));
+}
 
 function makeEngine(mutate?: (s: ReturnType<typeof defaultScenario>) => void) {
   const scn = defaultScenario();
@@ -15,7 +22,7 @@ function makeEngine(mutate?: (s: ReturnType<typeof defaultScenario>) => void) {
 
 describe('SimEngine', () => {
   it('runs, serves users, and produces plausible KPIs', () => {
-    const eng = makeEngine((s) => (s.settings.users.count = 120));
+    const eng = makeEngine((s) => withUsers(s, 120));
     for (let i = 0; i < 3000; i++) eng.step(); // 10 min of sim time
     const k = eng.counters;
     const last = eng.samples[eng.samples.length - 1];
@@ -35,7 +42,7 @@ describe('SimEngine', () => {
     const eng = makeEngine((s) => {
       s.stations = s.stations.filter((b) => b.tech === 'GSM');
       for (const b of s.stations) b.trxCount = 1; // 6 TCH per sector
-      s.settings.users.count = 400;
+      withUsers(s, 400);
       s.settings.users.voiceCallsPerHour = 60;
       s.settings.users.voiceMeanDurationS = 300;
     });
@@ -54,14 +61,11 @@ describe('SimEngine', () => {
     for (let i = 0; i < 200; i++) eng.step();
   });
 
-  it('static users never move; fixed users spawn at their position with continuous traffic', () => {
-    const eng = makeEngine((s) => {
-      s.settings.users.count = 60;
-      s.settings.users.staticShare = 0.5;
-    });
-    const statics = eng.users.filter((u) => u.mode === 'static' && !u.fixedId).map((u) => ({ u, x: u.x, y: u.y }));
+  it('static users never move; listed users spawn at their position with continuous traffic', () => {
+    const eng = makeEngine();
+    const statics = eng.users.filter((u) => u.mode === 'static' && u.specId !== 'fu-main').map((u) => ({ u, x: u.x, y: u.y }));
     expect(statics.length).toBeGreaterThan(10);
-    const probe = eng.users.find((u) => u.fixedId === 'fu-main')!;
+    const probe = eng.users.find((u) => u.specId === 'fu-main')!;
     expect(probe).toBeDefined();
     expect(probe.lat).toBeCloseTo(49.8352, 6);
     for (let i = 0; i < 600; i++) eng.step();
@@ -106,7 +110,7 @@ describe('SimEngine', () => {
   it('per-phone Rx antennas override the device default and change the link rank', () => {
     const eng = makeEngine();
     eng.step();
-    const u = eng.users.find((x) => x.techMask & 2 && !(x.techMask & 4) && !x.fixedId)!; // LTE-only phone
+    const u = eng.users.find((x) => x.techMask & 2 && !(x.techMask & 4) && x.specId !== 'fu-main')!; // LTE-only phone
     expect(eng.ueRx(u)).toBe(2);
     eng.moveUserTo(u, 49.8361, 24.0142, false); // close to the central site: high SINR
     eng.startSessionNow(u, 'data');
@@ -133,15 +137,4 @@ describe('SimEngine', () => {
     expect(eng.samples.at(-1)!.coverage).toBe(0);
   });
 
-  it('population operator filter puts every random user on one operator', () => {
-    const eng = makeEngine((s) => {
-      s.settings.users.operatorFilter = 'op3';
-      s.fixedUsers = [];
-    });
-    expect(eng.users.length).toBeGreaterThan(50);
-    expect(eng.users.every((u) => u.opIdx === 2)).toBe(true);
-    eng.settings.users.operatorFilter = 'all';
-    eng.reset();
-    expect(new Set(eng.users.map((u) => u.opIdx)).size).toBe(3);
-  });
 });

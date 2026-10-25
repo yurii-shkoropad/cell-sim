@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildRadioContext } from '../radio/cells';
 import { defaultScenario } from '../state/defaults';
 import { SimEngine } from './engine';
+import { areaAround, generateUsers, mulberry32, templateFromSettings } from './population';
 import { allocate, jainIndex, pfDiversityGainDb, type SchedulerKey } from './scheduler';
 
 // Two users wanting plenty: a good one (10 Mbps/RB) and a cell-edge one (1 Mbps/RB).
@@ -64,10 +65,8 @@ describe('schedulers in the simulation', () => {
   const base = JSON.stringify(defaultScenario());
   function run(sched: SchedulerKey) {
     const scn = JSON.parse(base) as ReturnType<typeof defaultScenario>;
-    scn.fixedUsers = [];
     scn.settings.radio.scheduler = sched;
-    scn.settings.users.count = 120;
-    scn.settings.users.staticShare = 1;
+    scn.users = generateUsers(scn, { ...templateFromSettings(scn), count: 120, staticShare: 1 }, areaAround(scn.center.lat, scn.center.lng), mulberry32(3));
     const c = scn.center;
     const eng = new SimEngine(scn, buildRadioContext(scn), { south: c.lat - 0.005, north: c.lat + 0.005, west: c.lng - 0.007, east: c.lng + 0.007 });
     eng.reset();
@@ -101,9 +100,7 @@ describe('schedulers in the simulation', () => {
 describe('compareSchedulers what-if', () => {
   it('matches the live allocation for the scheduler in use and ranks the others as expected', () => {
     const scn = defaultScenario();
-    scn.fixedUsers = [];
-    scn.settings.users.count = 200;
-    scn.settings.users.staticShare = 1;
+    scn.users = generateUsers(scn, { ...templateFromSettings(scn), count: 200, staticShare: 1 }, areaAround(scn.center.lat, scn.center.lng), mulberry32(5));
     const c = scn.center;
     const eng = new SimEngine(scn, buildRadioContext(scn), { south: c.lat - 0.005, north: c.lat + 0.005, west: c.lng - 0.007, east: c.lng + 0.007 });
     eng.reset();

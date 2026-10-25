@@ -1,4 +1,5 @@
 import type { BaseStation, Scenario, Settings, Tech } from '../types';
+import { areaAround, generateUsers, mulberry32, templateFromSettings } from '../sim/population';
 import { defaultScenario, defaultSettings } from './defaults';
 
 export type HeatmapKind = 'none' | 'rsrp' | 'server' | 'sinr' | 'throughput' | 'modulation' | 'condition';
@@ -112,7 +113,7 @@ export class Store {
 
   replaceScenario(s: Scenario) {
     s.settings = mergeSettings(s.settings);
-    s.fixedUsers ??= [];
+    migrateUsers(s);
     this.scenario = s;
     this.selectedStationId = null;
     if (!s.operators.some((o) => o.id === this.layers.operatorFilter)) this.layers.operatorFilter = 'all';
@@ -146,6 +147,19 @@ export function mergeSettings(p: Partial<Settings> | undefined): Settings {
   };
 }
 
+/**
+ * Older scenarios had random users generated on every reset plus separate fixed
+ * users; now every user is listed in `users`. Generate the random ones once
+ * (seeded) and merge in the fixed ones.
+ */
+export function migrateUsers(s: Scenario) {
+  if (!s.users) {
+    const generated = generateUsers(s, templateFromSettings(s), areaAround(s.center.lat, s.center.lng), mulberry32(s.settings.sim.seed));
+    s.users = [...(s.fixedUsers ?? []), ...generated];
+  }
+  delete s.fixedUsers;
+}
+
 function loadSaved(): Scenario | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -153,7 +167,7 @@ function loadSaved(): Scenario | null {
     const s = JSON.parse(raw) as Scenario;
     if (s?.version !== 1 || !Array.isArray(s.stations)) return null;
     s.settings = mergeSettings(s.settings);
-    s.fixedUsers ??= [];
+    migrateUsers(s);
     return s;
   } catch {
     return null;

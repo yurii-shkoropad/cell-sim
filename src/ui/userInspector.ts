@@ -3,10 +3,9 @@ import { GSM_SLOT_MBPS, linkModulation, linkRank, pathCondition, peakRateMbps, t
 import { PATH_COND_LABEL } from '../radio/buildingPaths';
 import { modulation } from '../radio/modulation';
 import { schedulerInfo } from '../sim/scheduler';
-import { newId } from '../radio/presets';
 import { techMaskOf, techsOf, type SimUser } from '../sim/engine';
 import { EVENT_COLOR, EVENT_LABEL } from '../sim/kpi';
-import { TECHS, type FixedUser, type Mobility, type TrafficMode } from '../types';
+import { TECHS, type Mobility, type TrafficMode } from '../types';
 import { isolateFromMap } from '../map/mapView';
 import type { App } from './app';
 import { button, clear, fmt, h, selectEl } from './dom';
@@ -79,29 +78,9 @@ export class UserInspector {
     return this.uid === null ? undefined : this.app.engine.userById(this.uid);
   }
 
-  /** Persist edits of a fixed (scenario) user. */
-  private syncFixed(u: SimUser) {
-    if (!u.fixedId) return;
-    const list = this.app.store.scenario.fixedUsers ?? [];
-    const f = list.find((x) => x.id === u.fixedId);
-    if (!f) return;
-    Object.assign(f, {
-      name: u.name ?? f.name,
-      lat: u.lat,
-      lng: u.lng,
-      operatorId: this.app.store.scenario.operators[u.opIdx]?.id ?? f.operatorId,
-      techs: techsOf(u.techMask),
-      mobility: u.mode,
-      traffic: u.traffic,
-      demandMbps: u.demandMbps,
-      ueRx: u.ueRxOverride,
-    } satisfies Partial<FixedUser>);
-    this.app.store.emit('users');
-  }
-
-  /** Called after a drag ends so a fixed user's saved position follows it. */
+  /** Called after a drag ends so the user's saved start position follows it. */
   dropped(u: SimUser) {
-    this.syncFixed(u);
+    this.app.saveUser(u);
     if (u.id === this.uid) this.renderLive();
   }
 
@@ -113,7 +92,7 @@ export class UserInspector {
     if (!u) return;
     const { engine, store } = this.app;
     const after = () => {
-      this.syncFixed(u);
+      this.app.saveUser(u);
       this.renderEdit();
       this.renderLive();
       this.app.mapView.renderUsers(engine);
@@ -135,7 +114,10 @@ export class UserInspector {
 
     const speed = h('input', { type: 'number', min: '0', step: '1', value: String(Math.round(u.speed * 3.6)), disabled: u.mode === 'static', onchange: () => {
       const v = parseFloat(speed.value);
-      if (Number.isFinite(v) && v >= 0) u.speed = v / 3.6;
+      if (Number.isFinite(v) && v >= 0) {
+        u.speed = v / 3.6;
+        u.speedFixed = true; // keep this speed on every trip
+      }
       after();
     } });
     const demand = h('input', { type: 'number', min: '0', step: '0.5', placeholder: 'random', value: u.demandMbps === null ? '' : String(u.demandMbps), onchange: () => {
@@ -145,20 +127,18 @@ export class UserInspector {
       after();
     } });
 
-    const nameRow = u.fixedId
-      ? row('Name', (() => {
-          const i = h('input', { type: 'text', value: u.name ?? '', onchange: () => {
-            u.name = i.value;
-            after();
-          } });
-          return i;
-        })())
-      : null;
+    const nameRow = row('Name', (() => {
+      const i = h('input', { type: 'text', value: u.name ?? '', onchange: () => {
+        u.name = i.value;
+        after();
+      } });
+      return i;
+    })());
 
     const details = h('details', { open: this.editOpen, ontoggle: () => (this.editOpen = details.open) }, h('summary', null, h('h4', { style: 'display:inline' }, 'Edit device & behaviour')));
     this.editHost.append(details);
     details.append(
-      nameRow ?? '',
+      nameRow,
       row('Operator', selectEl(store.scenario.operators.map((o, i) => [String(i), o.name] as [string, string]), () => String(u.opIdx), (v) => {
         engine.setOperator(u, +v);
         after();
@@ -200,27 +180,16 @@ export class UserInspector {
         h('label', { class: 'field check' }, h('input', { type: 'checkbox', checked: this.follow, onchange: (e: Event) => (this.follow = (e.target as HTMLInputElement).checked) }), h('span', null, 'Follow on map')),
       ),
       h('div', { class: 'row' },
-        u.fixedId
-          ? ''
-          : button('Keep as fixed user', () => {
-              const f: FixedUser = { id: newId('fu'), name: `UE${u.id}`, lat: u.lat, lng: u.lng, operatorId: store.scenario.operators[u.opIdx]?.id ?? '', techs: techsOf(u.techMask), mobility: u.mode, traffic: u.traffic, demandMbps: u.demandMbps, ueRx: u.ueRxOverride };
-              (store.scenario.fixedUsers ??= []).push(f);
-              u.fixedId = f.id;
-              u.name = f.name;
-              store.emit('users');
-              after();
-            }, '', 'Save this user in the scenario so it survives resets and is exported'),
-        button('Remove user', () => {
-          if (u.fixedId) {
-            store.scenario.fixedUsers = (store.scenario.fixedUsers ?? []).filter((f) => f.id !== u.fixedId);
-            store.emit('users');
+        button('Delete user', () => {
+          if (u.specId) this.app.deleteUsers([u.specId]);
+          else {
+            engine.removeUser(u.id);
+            this.app.mapView.renderUsers(engine);
           }
-          engine.removeUser(u.id);
-          this.app.mapView.renderUsers(engine);
           this.close();
         }, 'danger'),
       ),
-      h('p', { class: 'hint' }, u.fixedId ? 'Fixed user: changes are saved in the scenario.' : 'Random user: changes last until the next reset. Use “Keep as fixed user” to save it.'),
+      h('p', { class: 'hint' }, 'Changes are saved in the scenario. Drag the user on the map to move its start position.'),
     );
   }
 
@@ -239,7 +208,7 @@ export class UserInspector {
     this.titleEl.append(
       h('span', { class: 'dot', style: `background:${op?.color ?? '#888'}` }),
       h('b', null, u.name ?? `UE${u.id}`),
-      h('span', { class: 'muted' }, ` · ${op?.name ?? '?'}${u.fixedId ? ' · fixed' : ''}`),
+      h('span', { class: 'muted' }, ` · ${op?.name ?? '?'}`),
     );
     if (this.follow) {
       const p = this.app.mapView.map.latLngToContainerPoint([u.lat, u.lng]);
