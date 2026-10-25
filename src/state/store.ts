@@ -17,7 +17,8 @@ export interface LayerState {
   showBuildings: boolean;
 }
 
-type EventName = 'network' | 'settings' | 'selection' | 'layers' | 'scenario' | 'users';
+/** 'model': the path-loss model was switched from outside the Radio panel (it re-renders). */
+type EventName = 'network' | 'settings' | 'selection' | 'layers' | 'scenario' | 'users' | 'model';
 type Listener = () => void;
 
 const STORAGE_KEY = 'radio-sim.scenario.v1';
@@ -86,6 +87,13 @@ export class Store {
     this.layers.operatorFilter = ops.size === 1 ? list[0].operatorId : 'all';
     this.layers.techFilter = techs.size === 1 ? list[0].tech : 'all';
     this.emit('layers');
+  }
+
+  /** Switch to the building-aware path-loss model (COST-231 Walfisch–Ikegami + OSM buildings). */
+  useBuildingModel() {
+    this.scenario.settings.radio.model = 'cost231-wi';
+    this.emit('settings');
+    this.emit('model');
   }
 
   /** Show every operator and RAT on the coverage layer. */

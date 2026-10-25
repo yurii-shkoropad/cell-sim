@@ -319,6 +319,7 @@ export function radioPanel(app: App): HTMLElement {
   };
   render();
   store.on('scenario', render);
+  store.on('model', render);
   return root;
 }
 
@@ -414,6 +415,15 @@ export function layersPanel(app: App): HTMLElement {
           changed(true);
           app.mapView.renderSectors();
         }),
+        l.heatmap === 'condition' && store.scenario.settings.radio.model !== 'cost231-wi'
+          ? h('div', { class: 'callout' },
+              h('p', null, 'This layer needs the building-aware path-loss model: with Hata there are no buildings, so there is no LOS / NLOS / indoor to show.'),
+              button('Use building model', () => {
+                store.useBuildingModel();
+                render();
+              }, 'primary'),
+            )
+          : '',
         rangeOpacity(app),
         selectField('Resolution', [['2', 'Fine (2 px)'], ['4', 'Normal (4 px)'], ['8', 'Coarse (8 px)'], ['16', 'Draft (16 px)']], () => String(l.resolutionPx) as '2' | '4' | '8' | '16', (v) => {
           l.resolutionPx = +v;

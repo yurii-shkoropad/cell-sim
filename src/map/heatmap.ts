@@ -255,6 +255,25 @@ export class HeatmapLayer {
         ticks.appendChild(s);
       }
       el.appendChild(ticks);
+    } else if (kind === 'condition' && !this.ctx?.paths) {
+      // Nothing to draw: explain why and offer the fix instead of an empty map.
+      const wi = this.store.scenario.settings.radio.model === 'cost231-wi';
+      head.textContent = wi ? 'Propagation condition: no building data here' : 'Propagation condition needs the building model';
+      const note = document.createElement('div');
+      note.className = 'legend-note';
+      note.textContent = wi
+        ? 'Load OSM buildings for this area (Radio tab → Load OSM buildings for current view).'
+        : 'With Hata there are no buildings, so there is no LOS / NLOS / indoor. Switch to COST-231 Walfisch–Ikegami + OSM buildings.';
+      el.appendChild(note);
+      if (!wi) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn primary';
+        btn.style.marginTop = '6px';
+        btn.textContent = 'Use building model';
+        btn.onclick = () => this.store.useBuildingModel();
+        el.appendChild(btn);
+      }
     } else if (kind === 'condition') {
       const row = document.createElement('div');
       row.className = 'legend-cats';
