@@ -1,9 +1,12 @@
-import { BarController, BarElement, CategoryScale, Chart, Filler, Legend, LinearScale, LineController, LineElement, PointElement, Tooltip, type ChartConfiguration } from 'chart.js';
-import { EVENT_COLOR, EVENT_LABEL, EVENT_TYPES, TIMELINE_BUCKET_S, type SimEventType } from '../sim/kpi';
+import { BarController, BarElement, CategoryScale, Chart, Filler, Legend, LinearScale, LineController, LineElement, LogarithmicScale, PointElement, Tooltip, type ChartConfiguration } from 'chart.js';
+import { EVENT_COLOR, EVENT_LABEL, EVENT_TYPES, percentile, TIMELINE_BUCKET_S, type SimEventType } from '../sim/kpi';
 import type { App } from './app';
 import { clear, fmt, h } from './dom';
 
-Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, BarController, BarElement, Legend, Tooltip, Filler);
+Chart.register(LineController, LineElement, PointElement, LinearScale, LogarithmicScale, CategoryScale, BarController, BarElement, Legend, Tooltip, Filler);
+
+/** Throughput CDF x-axis floor, Mbps (log scale can't show 0; such users sit at the floor). */
+const THR_CDF_MIN = 0.01;
 Chart.defaults.font.family = 'Inter, system-ui, sans-serif';
 Chart.defaults.font.size = 10;
 Chart.defaults.color = '#52514e';
@@ -34,6 +37,12 @@ function lineChart(canvas: HTMLCanvasElement, labels: string[], yTitle: string, 
   return new Chart(canvas, cfg);
 }
 
+/** Mbps with sensible precision across kbit/s … Gbit/s. */
+export function fmtMbps(v: number): string {
+  if (v < 1) return `${(v * 1000).toFixed(0)} kbps`;
+  return `${v.toFixed(v < 10 ? 2 : v < 100 ? 1 : 0)} Mbps`;
+}
+
 export function fmtTime(s: number): string {
   const m = Math.floor(s / 60);
   const ss = Math.floor(s % 60);
@@ -51,6 +60,8 @@ export function kpiPanel(app: App): HTMLElement {
   const cEvents = mk();
   const cLoad = mk();
   const cCdf = mk();
+  const cThrCdf = mk();
+  const thrCdfTitle = h('div', { class: 'chart-title' }, 'DL throughput distribution of active data users (CDF)');
   const box = (title: string, c: HTMLCanvasElement, tall = false) => h('div', { class: `chart-box ${tall ? 'tall' : ''}` }, h('div', { class: 'chart-title' }, title), h('div', { class: 'chart-wrap' }, c));
 
   const logList = h('div', { class: 'log-list' });
@@ -77,6 +88,7 @@ export function kpiPanel(app: App): HTMLElement {
       box(`Event timeline (per ${TIMELINE_BUCKET_S} s)`, cEvents, true),
       box('Most loaded cells (PRB / TCH utilisation)', cLoad, true),
       box('SINR distribution of camped users (CDF)', cCdf),
+      h('div', { class: 'chart-box tall' }, thrCdfTitle, h('div', { class: 'chart-wrap' }, cThrCdf)),
     ),
     h('div', { class: 'log' }, h('div', { class: 'chart-title' }, 'Event log (newest first, click to locate)'), chips, logList),
   );
@@ -120,6 +132,33 @@ export function kpiPanel(app: App): HTMLElement {
       interaction: { mode: 'nearest', intersect: false, axis: 'x' },
       plugins: { legend: { display: false }, tooltip: { callbacks: { title: (it) => `SINR ≤ ${(it[0].parsed.x ?? 0).toFixed(1)} dB`, label: (it) => `${(+(it.parsed.y ?? 0)).toFixed(0)}% of users` } } },
       scales: { x: { type: 'linear', min: -10, max: 35, grid: { color: GRID }, title: { display: true, text: 'SINR (dB)' } }, y: { min: 0, max: 100, grid: { color: GRID }, ticks: { callback: (v) => `${v}%` } } },
+    },
+  });
+
+  const thrCdf = new Chart<'line', { x: number; y: number }[]>(cThrCdf, {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: 'Served', data: [], borderColor: SERIES[0], backgroundColor: SERIES[0], borderWidth: 2, pointRadius: 0, stepped: true },
+        { label: 'Demand', data: [], borderColor: SERIES[1], backgroundColor: SERIES[1], borderWidth: 2, borderDash: [5, 4], pointRadius: 0, stepped: true },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      parsing: false,
+      interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+      plugins: {
+        legend: { position: 'top', align: 'start', labels: { boxWidth: 10, boxHeight: 2 } },
+        tooltip: { callbacks: {
+          title: (it) => `${it[0].dataset.label} ≤ ${fmtMbps(it[0].parsed.x ?? 0)}`,
+          label: (it) => `${(+(it.parsed.y ?? 0)).toFixed(0)}% of data users`,
+        } },
+      },
+      scales: {
+        x: { type: 'logarithmic', min: THR_CDF_MIN, grid: { color: GRID }, title: { display: true, text: 'DL throughput (Mbps, log scale)' }, ticks: { maxRotation: 0, autoSkip: false, callback: (v) => ([0.01, 0.1, 1, 10, 100, 1000, 10000].includes(+v) ? String(v) : '') } },
+        y: { min: 0, max: 100, grid: { color: GRID }, ticks: { callback: (v) => `${v}%` } },
+      },
     },
   });
 
@@ -205,6 +244,18 @@ export function kpiPanel(app: App): HTMLElement {
     const vals = engine.users.filter((u) => u.serving >= 0 && Number.isFinite(u.sinr)).map((u) => u.sinr).sort((a, b) => a - b);
     cdf.data.datasets[0].data = vals.map((v, i) => ({ x: Math.max(-10, Math.min(35, v)), y: ((i + 1) / vals.length) * 100 }));
     cdf.update('none');
+
+    // Throughput CDF (served vs. demanded) of active data users
+    const dataUsers = engine.users.filter((u) => u.session?.kind === 'data');
+    const served = dataUsers.map((u) => u.thrMbps).sort((a, b) => a - b);
+    const demand = dataUsers.map((u) => u.session!.demandMbps).sort((a, b) => a - b);
+    const cdfPts = (xs: number[]) => xs.map((v, i) => ({ x: Math.max(THR_CDF_MIN, v), y: ((i + 1) / xs.length) * 100 }));
+    thrCdf.data.datasets[0].data = cdfPts(served);
+    thrCdf.data.datasets[1].data = cdfPts(demand);
+    thrCdf.update('none');
+    thrCdfTitle.textContent = served.length
+      ? `DL throughput of active data users (CDF) · n = ${served.length} · 5th pct ${fmtMbps(percentile(served, 0.05))} · median ${fmtMbps(percentile(served, 0.5))}`
+      : 'DL throughput of active data users (CDF): no active data sessions';
 
     renderLog();
   };
