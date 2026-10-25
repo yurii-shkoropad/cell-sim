@@ -38,6 +38,9 @@ header {
 .left { width: var(--left-w); flex: none; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border); min-height: 0; }
 .right { width: var(--right-w); flex: none; background: var(--surface); border-left: 1px solid var(--border); overflow-y: auto; }
 body.no-right .right { display: none; }
+body.no-left .left { display: none; }
+.panel-toggle { font-size: 15px; padding: 3px 9px; }
+.panel-toggle.active { color: var(--text); background: var(--surface-2); }
 #map { flex: 1; min-width: 0; position: relative; }
 #map.add-mode, #map.add-mode .leaflet-interactive { cursor: crosshair !important; }
 

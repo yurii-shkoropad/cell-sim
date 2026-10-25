@@ -37,9 +37,42 @@ const clock = h('span', { class: 'clock' }, '0:00');
 const perf = h('span', { class: 'perf' }, '');
 const hmStatus = h('span', { class: 'hm-status' }, '');
 const roadStatus = h('span', { class: 'hm-status' }, '');
-const toggleRight = button('KPIs ◧', () => document.body.classList.toggle('no-right'), 'ghost', 'Show or hide the KPI panel');
+// ---------------------------------------------------------------- side panels
+type Side = 'left' | 'right';
+const PANEL_KEY = 'radio-sim.hidden-panels';
+const hiddenPanels = new Set<Side>();
+try {
+  for (const s of JSON.parse(localStorage.getItem(PANEL_KEY) ?? '[]') as Side[]) hiddenPanels.add(s);
+} catch {
+  /* ignore */
+}
+const toggleLeft = button('☰', () => setPanel('left', hiddenPanels.has('left')), 'ghost panel-toggle', 'Show or hide the side panel');
+const toggleRight = button('KPIs ◧', () => setPanel('right', hiddenPanels.has('right')), 'ghost panel-toggle', 'Show or hide the KPI panel');
+
+function applyPanels() {
+  document.body.classList.toggle('no-left', hiddenPanels.has('left'));
+  document.body.classList.toggle('no-right', hiddenPanels.has('right'));
+  toggleLeft.classList.toggle('active', !hiddenPanels.has('left'));
+  toggleRight.classList.toggle('active', !hiddenPanels.has('right'));
+}
+
+/** Show or hide a side panel; the map is told about its new size so tiles and the heatmap fill it. */
+function setPanel(side: Side, visible: boolean) {
+  if (visible) hiddenPanels.delete(side);
+  else hiddenPanels.add(side);
+  applyPanels();
+  try {
+    localStorage.setItem(PANEL_KEY, JSON.stringify([...hiddenPanels]));
+  } catch {
+    /* ignore */
+  }
+  mapView.map.invalidateSize({ pan: false });
+  heatmap.schedule(50);
+}
+applyPanels();
 
 const header = h('header', null,
+  toggleLeft,
   h('div', { class: 'brand' }, h('b', null, 'CellSim'), h('span', null, 'mobile network simulator')),
   h('div', { class: 'controls' }, playBtn, stepBtn, resetBtn, h('label', { class: 'speed' }, 'Speed ', speedSel), clock, perf),
   h('div', { class: 'right-ctl' }, roadStatus, hmStatus, toggleRight),
@@ -163,9 +196,11 @@ try {
   /* ignore */
 }
 showTab(panels.has(initialTab) ? initialTab : 'network');
-// Open the station editor when a site is clicked on the map.
+// Open the station editor when a site is clicked on the map (showing the panel if hidden).
 store.on('selection', () => {
-  if (store.selectedStationId) showTab('network');
+  if (!store.selectedStationId) return;
+  showTab('network');
+  if (hiddenPanels.has('left')) setPanel('left', true);
 });
 
 right.appendChild(kpiPanel(app));
