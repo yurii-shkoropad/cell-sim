@@ -57,6 +57,7 @@ export class UserInspector {
     this.uid = id;
     this.app.mapView.selectedUserId = id;
     this.el.style.display = '';
+    this.app.mapView.map.getContainer().classList.add('inspector-open');
     this.renderEdit();
     this.renderLive();
     clearInterval(this.timer);
@@ -68,6 +69,7 @@ export class UserInspector {
     this.uid = null;
     this.app.mapView.selectedUserId = null;
     this.el.style.display = 'none';
+    this.app.mapView.map.getContainer().classList.remove('inspector-open');
     clearInterval(this.timer);
     this.app.mapView.renderSelection(this.app.engine);
   }

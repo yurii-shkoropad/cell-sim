@@ -9,12 +9,15 @@ function fixedUsersSection(app: App): HTMLElement {
   const { store, engine, mapView } = app;
   const tpl: { operatorId: string; mobility: Mobility; traffic: TrafficMode } = { operatorId: store.scenario.operators[0]?.id ?? '', mobility: 'static', traffic: 'data' };
   const listHost = h('div', { class: 'st-list' });
-  const placeBtn = button('Click map to place users', () => mapView.setPlaceMode(mapView.placeMode === 'user' ? null : 'user'), 'primary');
+  const placeBtn = button('Add users on map', () => mapView.setPlaceMode(mapView.placeMode === 'user' ? null : 'user'), 'primary', 'Click the map to place fixed users; Esc or Done to finish');
   mapView.onPlaceModeChange(() => {
     const on = mapView.placeMode === 'user';
     placeBtn.classList.toggle('active', on);
-    placeBtn.textContent = on ? 'Placing… (click to stop)' : 'Click map to place users';
+    placeBtn.textContent = on ? 'Done adding' : 'Add users on map';
   });
+  const MOB: Record<Mobility, string> = { static: 'static', walk: 'pedestrian', drive: 'vehicle' };
+  const TRF: Record<TrafficMode, string> = { data: 'continuous data', voice: 'continuous voice', random: 'random traffic', idle: 'idle' };
+  mapView.placeHint.user = () => `Adding ${MOB[tpl.mobility]} users · ${store.scenario.operators.find((o) => o.id === tpl.operatorId)?.name ?? '?'} · ${TRF[tpl.traffic]}`;
 
   mapView.onAddUser = (lat, lng) => {
     const list = (store.scenario.fixedUsers ??= []);
@@ -60,9 +63,18 @@ function fixedUsersSection(app: App): HTMLElement {
 
   return section('Fixed users',
     h('p', { class: 'hint' }, 'Users you place by hand. They are saved in the scenario and survive resets, so they work as measurement probes (indoor UE, office, stadium). Drag any user on the map to move it, and click one to inspect or edit it.'),
-    selectField('Operator', store.scenario.operators.map((o) => [o.id, o.name] as [string, string]), () => tpl.operatorId, (v) => (tpl.operatorId = v)),
-    selectField('Mobility', [['static', 'Static'], ['walk', 'Pedestrian'], ['drive', 'Vehicle']], () => tpl.mobility, (v) => (tpl.mobility = v)),
-    selectField('Traffic', [['data', 'Continuous data'], ['voice', 'Continuous voice'], ['random', 'Random (Poisson)'], ['idle', 'Idle']], () => tpl.traffic, (v) => (tpl.traffic = v)),
+    selectField('Operator', store.scenario.operators.map((o) => [o.id, o.name] as [string, string]), () => tpl.operatorId, (v) => {
+      tpl.operatorId = v;
+      mapView.refreshBanner();
+    }),
+    selectField('Mobility', [['static', 'Static'], ['walk', 'Pedestrian'], ['drive', 'Vehicle']], () => tpl.mobility, (v) => {
+      tpl.mobility = v;
+      mapView.refreshBanner();
+    }),
+    selectField('Traffic', [['data', 'Continuous data'], ['voice', 'Continuous voice'], ['random', 'Random (Poisson)'], ['idle', 'Idle']], () => tpl.traffic, (v) => {
+      tpl.traffic = v;
+      mapView.refreshBanner();
+    }),
     h('div', { class: 'row' }, placeBtn),
     listHost,
   );

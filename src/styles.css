@@ -250,3 +250,20 @@ table.meas tr.cand td { color: #b26a00; }
 
 .legend-cats { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 2px 0 4px; }
 .legend-cats i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+/* placement / edit mode */
+#map.add-mode::after {
+  content: ''; position: absolute; inset: 0; border: 3px solid var(--accent); pointer-events: none; z-index: 999;
+}
+.place-banner {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1002;
+  display: flex; align-items: center; gap: 10px; max-width: calc(100% - 140px);
+  background: var(--accent); color: var(--accent-ink); padding: 6px 6px 6px 12px; border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.25); font-size: 12px; line-height: 1.35;
+}
+.place-banner .btn { background: #fff; color: var(--accent); border-color: #fff; font-weight: 600; }
+.place-banner .btn:hover { background: #e3eefb; }
+.inspector-open .place-banner { left: 54px; transform: none; max-width: calc(100% - 400px); }
+.place-text { display: flex; flex-direction: column; min-width: 0; }
+.place-text b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.place-sub { opacity: .85; font-size: 11px; }

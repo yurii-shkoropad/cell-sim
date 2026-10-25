@@ -42,7 +42,7 @@ frequency (the ARFCN, EARFCN or NR-ARFCN is shown), PCI or BSIC, and on/off.
 
 **Operators:** name, PLMN (MCC-MNC, used to match imported data), colour and subscriber share.
 
-**Placement:** click the map to add a site; drag a marker to move it. Generate a hex grid
+**Placement:** *Add sites on map* enters edit mode, shown by a banner and a frame around the map. Click to add sites and drag sites to move them; *Done* or Esc finishes. Edit mode also ends when you switch tabs, open a user, or click an existing site. Outside edit mode, sites can't be dragged by accident. Generate a hex grid
 (rings, inter-site distance, azimuth offset) or scatter random sites. You can also import:
 - **OpenCelliD CSV:** LTE is grouped by eNB ID, NR by gNB ID and GSM by proximity. Azimuths are
   derived from the cell position estimates.

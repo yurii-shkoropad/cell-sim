@@ -109,7 +109,10 @@ mapView.onStationMoved = () => {
   store.emit('selection');
 };
 const inspector = new UserInspector(app);
-mapView.onUserClick = (id) => inspector.open(id);
+mapView.onUserClick = (id) => {
+  mapView.setPlaceMode(null);
+  inspector.open(id);
+};
 mapView.onUserDrag = (id, lat, lng, final) => {
   const u = engine.userById(id);
   if (!u) return;
@@ -131,7 +134,11 @@ const tabs: [string, string, () => HTMLElement][] = [
   ['help', 'Models', () => helpPanel()],
 ];
 const panels = new Map<string, HTMLElement>();
+let currentTab = '';
 function showTab(key: string) {
+  // Switching panels ends any placement mode (re-showing the same tab does not).
+  if (key !== currentTab) mapView.setPlaceMode(null);
+  currentTab = key;
   for (const [k, el] of panels) el.style.display = k === key ? '' : 'none';
   tabsEl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.k === key));
   try {

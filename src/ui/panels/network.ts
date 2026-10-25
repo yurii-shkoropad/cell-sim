@@ -29,12 +29,18 @@ export function networkPanel(app: App): HTMLElement {
   const opOptions = () => store.scenario.operators.map((o) => [o.id, o.name] as [string, string]);
   const presetOptions = PRESETS.map((p) => [p.key, p.label] as [string, string]);
 
-  const addBtn = button('Click map to place', () => app.mapView.setPlaceMode(app.mapView.placeMode === 'site' ? null : 'site'), 'primary');
+  const addBtn = button('Add sites on map', () => app.mapView.setPlaceMode(app.mapView.placeMode === 'site' ? null : 'site'), 'primary', 'Click the map to place sites and drag existing ones; Esc or Done to finish');
   app.mapView.onPlaceModeChange(() => {
     const on = app.mapView.placeMode === 'site';
     addBtn.classList.toggle('active', on);
-    addBtn.textContent = on ? 'Placing… (click to stop)' : 'Click map to place';
+    addBtn.textContent = on ? 'Done adding' : 'Add sites on map';
   });
+  app.mapView.placeHint.site = () => {
+    const op = store.scenario.operators.find((o) => o.id === gen.operatorId)?.name ?? '?';
+    const sec = gen.sectors === 1 ? 'omni' : `${gen.sectors} sectors`;
+    return `Adding ${presetByKey(gen.preset).label} · ${op} · ${sec}`;
+  };
+  const hintChanged = () => app.mapView.refreshBanner();
 
   app.mapView.onAddSite = (lat, lng) => {
     const p = presetByKey(gen.preset);
@@ -49,16 +55,25 @@ export function networkPanel(app: App): HTMLElement {
   const renderOpSelect = () => {
     clear(opSelHost);
     if (!store.scenario.operators.some((o) => o.id === gen.operatorId)) gen.operatorId = store.scenario.operators[0]?.id ?? '';
-    opSelHost.appendChild(selectField('Operator', opOptions(), () => gen.operatorId, (v) => (gen.operatorId = v)));
+    opSelHost.appendChild(selectField('Operator', opOptions(), () => gen.operatorId, (v) => {
+      gen.operatorId = v;
+      hintChanged();
+    }));
   };
   renderOpSelect();
 
   root.appendChild(
     section(
       'Add sites',
-      selectField('Template', presetOptions, () => gen.preset, (v) => (gen.preset = v)),
+      selectField('Template', presetOptions, () => gen.preset, (v) => {
+        gen.preset = v;
+        hintChanged();
+      }),
       opSelHost,
-      selectField('Sectors', [['1', 'Omni'], ['3', '3 sectors'], ['6', '6 sectors']], () => String(gen.sectors) as '1' | '3' | '6', (v) => (gen.sectors = +v)),
+      selectField('Sectors', [['1', 'Omni'], ['3', '3 sectors'], ['6', '6 sectors']], () => String(gen.sectors) as '1' | '3' | '6', (v) => {
+        gen.sectors = +v;
+        hintChanged();
+      }),
       h('div', { class: 'row' }, addBtn),
       h('details', null,
         h('summary', null, 'Patterns'),
@@ -161,6 +176,7 @@ export function networkPanel(app: App): HTMLElement {
         h('div', { class: 'st-list' },
           ...items.map((s) =>
             h('div', { class: `st-item ${store.selectedStationId === s.id ? 'sel' : ''} ${s.enabled ? '' : 'off'}`, onclick: () => {
+              app.mapView.setPlaceMode(null); // picking an existing site ends placement
               store.select(s.id);
               app.mapView.focusStation(s.id);
             } },

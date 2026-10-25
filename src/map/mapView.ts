@@ -47,6 +47,11 @@ export class MapView {
   selectedUserId: number | null = null;
   private selRing: L.CircleMarker | null = null;
   private suppressClick = false;
+  /** Banner over the map while a place mode is active. */
+  private banner: HTMLDivElement;
+  private bannerText: HTMLSpanElement;
+  /** Describe what clicking will place (set by the panels that own each mode). */
+  placeHint: Record<'site' | 'user', () => string> = { site: () => 'Click the map to place a base station', user: () => 'Click the map to place a user' };
 
   constructor(
     el: HTMLElement,
@@ -79,12 +84,53 @@ export class MapView {
       else store.select(null);
     });
     this.map.on('zoomend', () => this.renderSectors());
+
+    this.bannerText = L.DomUtil.create('span', 'place-text');
+    this.banner = L.DomUtil.create('div', 'place-banner', this.map.getContainer());
+    const done = L.DomUtil.create('button', 'btn', this.banner);
+    done.type = 'button';
+    done.textContent = 'Done';
+    done.title = 'Stop editing (Esc)';
+    done.onclick = () => this.setPlaceMode(null);
+    this.banner.prepend(this.bannerText);
+    this.banner.style.display = 'none';
+    L.DomEvent.disableClickPropagation(this.banner);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.placeMode) this.setPlaceMode(null);
+    });
   }
 
+  /**
+   * Enter/leave a place mode. While placing sites the map is in "edit network"
+   * mode: base stations can be dragged; outside it they are fixed, so viewing
+   * the map never moves a site by accident.
+   */
   setPlaceMode(mode: 'site' | 'user' | null) {
+    if (this.placeMode === mode) return;
     this.placeMode = mode;
     this.map.getContainer().classList.toggle('add-mode', mode !== null);
+    this.refreshBanner();
+    for (const m of this.markers.values()) this.applyDraggable(m);
     this.placeListeners.forEach((fn) => fn());
+  }
+
+  /** Re-read the banner text (e.g. after the template or operator changed). */
+  refreshBanner() {
+    const mode = this.placeMode;
+    this.banner.style.display = mode ? '' : 'none';
+    if (!mode) return;
+    this.bannerText.innerHTML = '';
+    const title = document.createElement('b');
+    title.textContent = this.placeHint[mode]();
+    const sub = document.createElement('span');
+    sub.className = 'place-sub';
+    sub.textContent = mode === 'site' ? 'Click the map to add · drag sites to move · Esc to finish' : 'Click the map to add · Esc to finish';
+    this.bannerText.append(title, sub);
+  }
+
+  private applyDraggable(m: L.Marker) {
+    if (this.placeMode === 'site') m.dragging?.enable();
+    else m.dragging?.disable();
   }
 
   onPlaceModeChange(fn: () => void) {
@@ -115,6 +161,8 @@ export class MapView {
         m = L.marker([bs.lat, bs.lng], { icon, draggable: true, autoPan: true, zIndexOffset: 1000 });
         m.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
+          // Clicking an existing site means "edit this one": leave placement mode.
+          this.setPlaceMode(null);
           this.store.select(bs.id);
         });
         m.on('drag', () => {
@@ -133,6 +181,7 @@ export class MapView {
         m.setLatLng([bs.lat, bs.lng]);
         m.setIcon(icon);
       }
+      this.applyDraggable(m);
       m.bindTooltip(`${bs.name} · ${op?.name ?? '?'} · ${bs.tech} ${bs.band}`, { direction: 'top', offset: [0, -10] });
     }
     for (const [id, m] of this.markers) {
