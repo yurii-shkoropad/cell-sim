@@ -187,11 +187,20 @@ export function usersPanel(app: App): HTMLElement {
         }, { min: 0.01, step: 0.5, unit: 'Mbps' }),
         h('p', { class: 'hint' }, `Offered load ≈ ${(u.count * (u.voiceCallsPerHour * u.voiceMeanDurationS) / 3600).toFixed(1)} Erl voice, ${(u.count * (u.dataSessionsPerHour * u.dataMeanDurationS) / 3600 * u.dataMeanDemandMbps).toFixed(0)} Mbps data demand.`),
       ),
-      h('div', { class: 'row' }, button('Respawn users with these settings', () => app.respawnUsers(), 'primary')),
+      h('div', { class: 'row' },
+        button('Respawn users with these settings', () => app.respawnUsers(), 'primary'),
+        button('Delete all users', () => {
+          const n = app.engine.users.length;
+          const fixed = store.scenario.fixedUsers?.length ?? 0;
+          if (!confirm(`Delete all ${n} users${fixed ? ` (including ${fixed} fixed)` : ''}? The random user count is set to 0, so Reset will not bring them back.`)) return;
+          app.deleteAllUsers();
+        }, 'danger', 'Remove every random and fixed user'),
+      ),
     );
   };
   render();
   store.on('scenario', render);
+  store.on('users', render);
   return root;
 }
 

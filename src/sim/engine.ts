@@ -764,6 +764,13 @@ export class SimEngine {
     return u;
   }
 
+  /** Remove every user (sessions end, cells free up); KPI history is kept. */
+  removeAllUsers() {
+    this.users = [];
+    this.recountOccupancy();
+    this.schedule();
+  }
+
   removeUser(id: number) {
     const u = this.userById(id);
     if (!u) return;

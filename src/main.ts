@@ -108,6 +108,16 @@ const app: App = {
   roads: () => roads,
   loadRoads,
   respawnUsers: () => resetSim(),
+  deleteAllUsers: () => {
+    inspector.close();
+    store.scenario.settings.users.count = 0;
+    store.scenario.fixedUsers = [];
+    engine.removeAllUsers();
+    store.emit('users'); // Users panel re-renders (count field, fixed-user list)
+    store.emit('settings');
+    mapView.renderUsers(engine);
+    liveTick();
+  },
   openUser: (id) => {
     // One inspector at a time: showing a user closes the station panel.
     if (store.selectedStationId) store.select(null);

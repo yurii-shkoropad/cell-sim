@@ -117,4 +117,19 @@ describe('SimEngine', () => {
     eng.setUeRx(u, null);
     expect(eng.ueRx(u)).toBe(2);
   });
+
+  it('removeAllUsers frees every cell and the simulation keeps running', () => {
+    const eng = makeEngine();
+    for (let i = 0; i < 300; i++) eng.step();
+    expect(eng.cells.some((c) => c.active > 0)).toBe(true);
+    eng.removeAllUsers();
+    expect(eng.users).toHaveLength(0);
+    for (const c of eng.cells) {
+      expect(c.active).toBe(0);
+      expect(c.camped).toBe(0);
+      expect(c.load).toBe(0);
+    }
+    for (let i = 0; i < 20; i++) eng.step();
+    expect(eng.samples.at(-1)!.coverage).toBe(0);
+  });
 });
