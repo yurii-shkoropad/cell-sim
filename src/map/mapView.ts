@@ -18,6 +18,19 @@ function userStyle(u: SimUser): L.CircleMarkerOptions {
   const stroke = u.mode === 'drive' ? '#222' : u.mode === 'static' ? '#f2b705' : '#fff';
   return { fillColor: fill, color: stroke, weight: u.mode === 'static' ? 2 : 1, radius: (u.session ? 5 : 3.5) + (u.fixedId ? 2 : 0) };
 }
+/**
+ * Keep clicks inside a floating panel from reaching the map. Leaflet's own
+ * disableClickPropagation walks up from the click target at handling time, so a
+ * button that re-renders its panel (and is detached by then) would otherwise be
+ * taken for a click on the empty map (deselecting, or placing a site).
+ */
+export function isolateFromMap(el: HTMLElement) {
+  L.DomEvent.disableClickPropagation(el);
+  L.DomEvent.disableScrollPropagation(el);
+  el.addEventListener('click', (e) => e.stopPropagation());
+  el.addEventListener('dblclick', (e) => e.stopPropagation());
+}
+
 /** Footprints whose upper beam edge never lands are drawn out to this range (dashed). */
 const FOOTPRINT_MAX_M = 6000;
 
@@ -94,7 +107,7 @@ export class MapView {
     done.onclick = () => this.setPlaceMode(null);
     this.banner.prepend(this.bannerText);
     this.banner.style.display = 'none';
-    L.DomEvent.disableClickPropagation(this.banner);
+    isolateFromMap(this.banner);
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.placeMode) this.setPlaceMode(null);
     });
@@ -311,8 +324,10 @@ export class MapView {
       this.renderSelection(engine);
     }
 
-    // Links from active users to their serving cell.
-    if (!lay.showLinks || !this.ctx) {
+    // Links: active users → serving cell (Layers option), plus every user camped
+    // on the selected station (solid = active session, dashed = idle).
+    const selBs = this.store.selectedStationId;
+    if ((!lay.showLinks && !selBs) || !this.ctx || !lay.showUsers) {
       if (this.linkLines.length) {
         this.linkLayer.clearLayers();
         this.linkLines = [];
@@ -321,17 +336,19 @@ export class MapView {
     }
     let k = 0;
     for (const u of users) {
-      if (u.serving < 0 || !u.session) continue;
+      if (u.serving < 0) continue;
       const c = this.ctx.cells[u.serving];
       if (!c) continue;
+      const ofSelected = c.bsId === selBs;
+      if (!ofSelected && !(lay.showLinks && u.session)) continue;
       let line = this.linkLines[k];
       const ll: L.LatLngExpression[] = [[u.lat, u.lng], [c.lat, c.lng]];
       if (!line) {
-        line = L.polyline(ll, { renderer: this.renderer, weight: 1, opacity: 0.7, interactive: false });
+        line = L.polyline(ll, { renderer: this.renderer, interactive: false });
         line.addTo(this.linkLayer);
         this.linkLines[k] = line;
       } else line.setLatLngs(ll);
-      line.setStyle({ color: c.color });
+      line.setStyle({ color: c.color, weight: ofSelected ? 2 : 1, opacity: ofSelected ? 0.9 : 0.7, dashArray: ofSelected && !u.session ? '3 4' : undefined });
       k++;
     }
     while (this.linkLines.length > k) this.linkLines.pop()!.remove();

@@ -6,6 +6,7 @@ import { newId } from '../radio/presets';
 import { techMaskOf, techsOf, type SimUser } from '../sim/engine';
 import { EVENT_COLOR, EVENT_LABEL } from '../sim/kpi';
 import { TECHS, type FixedUser, type Mobility, type TrafficMode } from '../types';
+import { isolateFromMap } from '../map/mapView';
 import type { App } from './app';
 import { button, clear, fmt, h, selectEl } from './dom';
 import { fmtTime } from './kpiPanel';
@@ -44,8 +45,7 @@ export class UserInspector {
     );
     const container = app.mapView.map.getContainer();
     container.appendChild(this.el);
-    L.DomEvent.disableClickPropagation(this.el);
-    L.DomEvent.disableScrollPropagation(this.el);
+    isolateFromMap(this.el);
     L.DomEvent.on(this.el, 'mousemove', L.DomEvent.stopPropagation);
   }
 
@@ -263,7 +263,14 @@ export class UserInspector {
         kv('Mobility', u.mode === 'static' ? 'static' : `${u.mode === 'walk' ? 'pedestrian' : 'vehicle'}, ${Math.round(u.speed * 3.6)} km/h${u.dragging ? ' (dragging)' : ''}`),
         kv('Device', `${techsOf(u.techMask).join(' / ')} · ${engine.ueRx(u)} Rx antenna${engine.ueRx(u) > 1 ? 's' : ''}${u.ueRxOverride === null ? '' : ' (set)'}`),
         kv('Position', `${u.lat.toFixed(5)}, ${u.lng.toFixed(5)}`),
-        kv('Serving cell', c ? `${c.name} · ${c.tech} · PCI ${c.pci} · ${c.freqMHz} MHz` : '—'),
+        c
+          ? h('div', { class: 'kv' }, h('span', null, 'Serving cell'), h('b', null,
+              h('a', { href: '#', class: 'cell-link', title: 'Open this station', onclick: (e: Event) => e.preventDefault(), onmousedown: (e: Event) => {
+                e.preventDefault();
+                store.select(c.bsId);
+              } }, c.name),
+              ` · ${c.tech} · PCI ${c.pci} · ${c.freqMHz} MHz`))
+          : kv('Serving cell', '—'),
         kv(c?.tech === 'GSM' ? 'RxLev' : 'RSRP', c ? `${fmt(u.rx)} dBm` : '—', c && th && u.rx < th.minRxDbm + 6 ? 'bad' : ''),
         kv(c?.tech === 'GSM' ? 'C/(I+N)' : 'SINR', c ? `${fmt(u.sinr)} dB` : '—', c && th && u.sinr < th.qOutSinrDb + 3 ? 'bad' : ''),
         kv('MIMO', c && c.tech !== 'GSM' ? (() => {

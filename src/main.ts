@@ -9,6 +9,7 @@ import './styles.css';
 import type { App } from './ui/app';
 import { button, h, selectEl, toast } from './ui/dom';
 import { fmtTime, kpiPanel } from './ui/kpiPanel';
+import { StationInspector } from './ui/stationInspector';
 import { UserInspector } from './ui/userInspector';
 import { dataPanel, planningPanel } from './ui/panels/data';
 import { helpPanel } from './ui/panels/help';
@@ -107,7 +108,11 @@ const app: App = {
   roads: () => roads,
   loadRoads,
   respawnUsers: () => resetSim(),
-  openUser: (id) => inspector.open(id),
+  openUser: (id) => {
+    // One inspector at a time: showing a user closes the station panel.
+    if (store.selectedStationId) store.select(null);
+    inspector.open(id);
+  },
   onLiveTick: (fn) => liveFns.push(fn),
 };
 
@@ -142,9 +147,10 @@ mapView.onStationMoved = () => {
   store.emit('selection');
 };
 const inspector = new UserInspector(app);
+const stationInspector = new StationInspector(app);
 mapView.onUserClick = (id) => {
   mapView.setPlaceMode(null);
-  inspector.open(id);
+  app.openUser(id);
 };
 mapView.onUserDrag = (id, lat, lng, final) => {
   const u = engine.userById(id);
@@ -196,12 +202,15 @@ try {
   /* ignore */
 }
 showTab(panels.has(initialTab) ? initialTab : 'network');
-// Open the station editor when a site is clicked on the map (showing the panel if hidden).
+// Selecting a site (map, list, or after placing it) opens its inspector over the map.
 store.on('selection', () => {
-  if (!store.selectedStationId) return;
-  showTab('network');
-  if (hiddenPanels.has('left')) setPanel('left', true);
+  if (store.selectedStationId) {
+    inspector.close();
+    stationInspector.open(store.selectedStationId);
+  } else stationInspector.close();
+  mapView.renderUsers(engine);
 });
+store.on('network', () => stationInspector.refresh());
 
 right.appendChild(kpiPanel(app));
 

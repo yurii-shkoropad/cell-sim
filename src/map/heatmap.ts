@@ -2,6 +2,7 @@ import L from 'leaflet';
 import type { RadioContext } from '../radio/cells';
 import type { HeatmapKind, Store } from '../state/store';
 import { MODULATIONS } from '../radio/modulation';
+import { isolateFromMap } from './mapView';
 import { colorAt, cssGradient, parseColor, RSRP_SCALE, RXLEV_SCALE, SINR_SCALE, THR_SCALE, type Scale } from './colors';
 import type { HeatmapRequest, HeatmapResult } from './heatmap.worker';
 
@@ -32,6 +33,7 @@ export class HeatmapLayer {
     this.worker.onmessage = (e: MessageEvent<HeatmapResult>) => this.onResult(e.data);
 
     this.legendEl = L.DomUtil.create('div', 'legend');
+    isolateFromMap(this.legendEl);
     const Legend = L.Control.extend({ onAdd: () => this.legendEl });
     this.legend = new Legend({ position: 'bottomright' });
     this.legend.addTo(map);
@@ -204,7 +206,6 @@ export class HeatmapLayer {
       btn.style.marginTop = '6px';
       btn.textContent = 'Show all operators & RATs';
       btn.onclick = () => this.store.showAllLayers();
-      L.DomEvent.disableClickPropagation(el);
       el.append(head, note, btn);
       return;
     }

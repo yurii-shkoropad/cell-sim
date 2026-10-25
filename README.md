@@ -56,6 +56,15 @@ shares, voice and data arrival rates, durations and data demand.
 figure, shadowing σ and decorrelation distance, interferer-load model, Shannon parameters, and
 per-RAT mobility thresholds (min level, A3 offset, hysteresis, TTT, B2, Qout, T310, priority).
 
+## Inspecting the network
+
+- **Station inspector:** click a site on the map or in the station list.
+  - *Overview* (live): site totals (users, served versus demanded throughput, mean SINR, cell-edge users, handovers, drops and blocks); per-sector PRB/TCH utilisation, throughput, SINR and MU-MIMO gain; the connected users (level, SINR, layers, modulation, throughput); and recent events. Lines on the map join the site to its users.
+  - *Configure:* every station and sector parameter, plus the vertical-beam side view.
+- **User inspector:** click a user. It shows live radio state and lets you edit the user, and its serving cell links back to the station.
+
+Only one inspector is open at a time.
+
 ## Outputs
 
 - **Map layers:** signal level (RSRP or RxLev), best server, SINR, peak DL throughput, and modulation reached. Each can
