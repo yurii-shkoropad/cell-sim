@@ -31,7 +31,8 @@ export function mobileCorrection(freqMHz: number, hm: number, env: Environment):
 }
 
 export function resolveModel(model: PathLossModel, freqMHz: number): 'okumura-hata' | 'cost231-hata' {
-  if (model !== 'auto') return model;
+  // The building model falls back to the matching Hata variant where it has no data.
+  if (model === 'okumura-hata' || model === 'cost231-hata') return model;
   return freqMHz <= 1500 ? 'okumura-hata' : 'cost231-hata';
 }
 
@@ -93,8 +94,14 @@ export interface ValidityIssue {
 }
 
 export function validity(freqMHz: number, hb: number, hm: number, model: PathLossModel): ValidityIssue[] {
-  const m = resolveModel(model, freqMHz);
   const issues: ValidityIssue[] = [];
+  if (model === 'cost231-wi') {
+    if (freqMHz < 800 || freqMHz > 2000) issues.push({ param: 'frequency', message: `${freqMHz} MHz is outside Walfisch–Ikegami range 800-2000 MHz (extrapolated)` });
+    if (hb < 4 || hb > 50) issues.push({ param: 'height', message: `Antenna height ${hb} m outside Walfisch–Ikegami range 4-50 m` });
+    if (hm < 1 || hm > 3) issues.push({ param: 'ue height', message: `UE height ${hm} m outside 1-3 m` });
+    return issues;
+  }
+  const m = resolveModel(model, freqMHz);
   const [fLo, fHi] = m === 'okumura-hata' ? [150, 1500] : [1500, 2000];
   if (freqMHz < fLo || freqMHz > fHi) {
     issues.push({ param: 'frequency', message: `${freqMHz} MHz is outside ${m} range ${fLo}-${fHi} MHz (extrapolated)` });

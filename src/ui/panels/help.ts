@@ -15,6 +15,16 @@ const HTML = `
 <li>Outside the published validity ranges (f, h<sub>b</sub> 30–200 m, d 1–20 km) the formulas are <b>extrapolated</b>; the station editor and plan check flag this. COST-231 at 2.6 GHz and 3.5 GHz is an extrapolation, so treat NR n78 results as indicative only.</li>
 </ul>
 
+<h4>1b. Building-aware model: COST-231 Walfisch–Ikegami + OSM buildings</h4>
+<p>With <i>Radio → Path-loss model → COST-231 Walfisch–Ikegami + OSM buildings</i>, OSM footprints are rasterised at 3 m. Heights come from <code>height</code>, otherwise <code>building:levels</code> × 3 m (+ roof levels), otherwise a typical height for the building type, otherwise the default. Each site casts 720 rays (0.5°) out to 4 km and evaluates the path at every 10 m:</p>
+<ul>
+<li><b>LOS test:</b> exact for the straight ray. A UE at distance d is blocked if any building sample at s &lt; d has <code>(h<sub>b</sub> − h)/s &lt; (h<sub>b</sub> − h<sub>m</sub>)/d</code>, so a running minimum along the ray decides LOS for every d.</li>
+<li><b>LOS</b> (street canyon): <code>L = 42.6 + 26·log d + 20·log f</code>, never below free space.</li>
+<li><b>NLOS:</b> <code>L = L<sub>0</sub> + L<sub>rts</sub> + L<sub>msd</sub></code>. L<sub>rts</sub> is rooftop-to-street diffraction, using the height of the <i>last building</i> before the UE, street width w = b/2 and φ = 90°. L<sub>msd</sub> is multi-screen diffraction, using the <i>mean roof height</i> of the buildings crossed, building separation b = d / crossings (15–100 m), and whether the antenna is above or below those roofs (k<sub>a</sub>, k<sub>d</sub>, L<sub>bsh</sub>).</li>
+<li><b>Indoor:</b> a UE inside a footprint has its own building excluded from the path geometry, and gets the ITU-R P.2109 median building entry loss <code>r + s·log f + t·log² f</code> (f in GHz): traditional (12.64, 3.72, 0.96) or thermally efficient (28.19, −3.00, 8.48).</li>
+<li>Beyond 4 km, or outside the building data, the Hata model is used. The validity range is 800–2000 MHz, h<sub>b</sub> 4–50 m, d 20 m–5 km. Terrain elevation and reflections are not modelled. Because buildings are now explicit, a smaller shadowing σ (≈ 4 dB) is appropriate.</li>
+</ul>
+
 <h4>2. Antenna pattern (3GPP TR 36.814)</h4>
 <p><code>A<sub>H</sub>(φ) = −min(12(φ/φ<sub>3dB</sub>)², A<sub>m</sub>)</code>, <code>A<sub>V</sub>(θ) = −min(12((θ−θ<sub>tilt</sub>)/θ<sub>3dB</sub>)², 20)</code>, <code>A = −min(−(A<sub>H</sub>+A<sub>V</sub>), A<sub>m</sub>)</code>. A<sub>m</sub> is the front-to-back ratio; θ is the depression angle from the antenna to the UE. NR beamforming is approximated by a higher static gain.</p>
 

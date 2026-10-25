@@ -1,5 +1,6 @@
 import L from 'leaflet';
-import { GSM_SLOT_MBPS, linkModulation, linkRank, peakRateMbps, type CellRF } from '../radio/cells';
+import { GSM_SLOT_MBPS, linkModulation, linkRank, pathCondition, peakRateMbps, type CellRF } from '../radio/cells';
+import { PATH_COND_LABEL } from '../radio/buildingPaths';
 import { modulation } from '../radio/modulation';
 import { schedulerInfo } from '../sim/scheduler';
 import { newId } from '../radio/presets';
@@ -260,6 +261,7 @@ export class UserInspector {
     this.liveHost.append(
       h('div', { class: 'kv-grid' },
         kv('State', state),
+        c && c.pathMap >= 0 ? kv('Path', PATH_COND_LABEL[pathCondition(this.app.ctx(), c, u.x, u.y)] + ' (building model)') : '',
         kv('Mobility', u.mode === 'static' ? 'static' : `${u.mode === 'walk' ? 'pedestrian' : 'vehicle'}, ${Math.round(u.speed * 3.6)} km/h${u.dragging ? ' (dragging)' : ''}`),
         kv('Device', `${techsOf(u.techMask).join(' / ')} · ${engine.ueRx(u)} Rx antenna${engine.ueRx(u) > 1 ? 's' : ''}${u.ueRxOverride === null ? '' : ' (set)'}`),
         kv('Position', `${u.lat.toFixed(5)}, ${u.lng.toFixed(5)}`),

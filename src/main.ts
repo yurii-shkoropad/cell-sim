@@ -2,7 +2,9 @@ import { HeatmapLayer } from './map/heatmap';
 import { MapView } from './map/mapView';
 import { buildRadioContext, type RadioContext } from './radio/cells';
 import { SimEngine } from './sim/engine';
-import { loadBundledRoads, loadRoadGraph, type Bounds, type RoadGraph } from './sim/roads';
+import { fetchOverpass, loadBundledRoads, loadRoadGraph, type Bounds, type RoadGraph } from './sim/roads';
+import { BuildingModel } from './radio/buildingModel';
+import { buildingsFromBundle, buildingsFromOverpass, type BuildingSet, type BundledBuildings } from './radio/buildings';
 import { LocalProjection } from './geo';
 import { Store } from './state/store';
 import './styles.css';
@@ -38,6 +40,7 @@ const clock = h('span', { class: 'clock' }, '0:00');
 const perf = h('span', { class: 'perf' }, '');
 const hmStatus = h('span', { class: 'hm-status' }, '');
 const roadStatus = h('span', { class: 'hm-status' }, '');
+const bldStatus = h('span', { class: 'hm-status' }, '');
 // ---------------------------------------------------------------- side panels
 type Side = 'left' | 'right';
 const PANEL_KEY = 'radio-sim.hidden-panels';
@@ -76,7 +79,7 @@ const header = h('header', null,
   toggleLeft,
   h('div', { class: 'brand' }, h('b', null, 'CellSim'), h('span', null, 'mobile network simulator')),
   h('div', { class: 'controls' }, playBtn, stepBtn, resetBtn, h('label', { class: 'speed' }, 'Speed ', speedSel), clock, perf),
-  h('div', { class: 'right-ctl' }, roadStatus, hmStatus, toggleRight),
+  h('div', { class: 'right-ctl' }, roadStatus, bldStatus, hmStatus, toggleRight),
 );
 const mapEl = h('div', { id: 'map' });
 const tabsEl = h('nav', { class: 'tabs' });
@@ -90,6 +93,8 @@ const mapView = new MapView(mapEl, store);
 const heatmap = new HeatmapLayer(mapView.map, store);
 let ctx: RadioContext = buildRadioContext(store.scenario);
 let roads: RoadGraph | null = null;
+const buildings = new BuildingModel();
+const MAX_BUILDING_AREA_KM2 = 12;
 
 const viewBounds = (): Bounds => {
   const b = mapView.map.getBounds();
@@ -107,6 +112,8 @@ const app: App = {
   ctx: () => ctx,
   roads: () => roads,
   loadRoads,
+  buildings: () => buildings,
+  loadBuildings,
   respawnUsers: () => resetSim(),
   deleteAllUsers: () => {
     inspector.close();
@@ -133,7 +140,9 @@ heatmap.loadsProvider = () => engine.loads.slice();
 heatmap.onStatus = (busy, ms) => (hmStatus.textContent = busy ? 'computing heatmap…' : `heatmap ${ms.toFixed(0)} ms`);
 
 function rebuild() {
-  ctx = buildRadioContext(store.scenario);
+  ctx = buildRadioContext(store.scenario, buildings.provider(store.scenario));
+  buildings.finish(ctx);
+  if (buildings.lastComputed) bldStatus.textContent = `buildings: ${buildings.set!.count} · traced ${buildings.lastComputed} site${buildings.lastComputed > 1 ? 's' : ''} in ${buildings.lastComputeMs.toFixed(0)} ms`;
   engine.setScenario(store.scenario, ctx);
   mapView.setContext(ctx);
   mapView.renderStations();
@@ -324,6 +333,37 @@ async function loadRoads() {
 }
 let roadsLoading = false;
 
+// ---------------------------------------------------------------- buildings
+function applyBuildings(set: BuildingSet, source: string) {
+  buildings.setBuildings(set, source);
+  bldStatus.textContent = `buildings: ${set.count} (${source})`;
+  mapView.setBuildings(set, store.scenario.settings.radio.defaultBuildingHeightM);
+  scheduleRebuild();
+}
+
+/** Fetch OSM building footprints for the current view from Overpass. */
+async function loadBuildings() {
+  const b = viewBounds();
+  const proj = new LocalProjection((b.south + b.north) / 2, (b.west + b.east) / 2);
+  const sw = proj.toXY(b.south, b.west);
+  const ne = proj.toXY(b.north, b.east);
+  const km2 = ((ne.x - sw.x) * (ne.y - sw.y)) / 1e6;
+  if (km2 > MAX_BUILDING_AREA_KM2) {
+    toast(`The view covers ${km2.toFixed(0)} km². Zoom in to at most ${MAX_BUILDING_AREA_KM2} km² before loading buildings.`, 'error');
+    return;
+  }
+  bldStatus.textContent = 'buildings: loading…';
+  try {
+    const els = await fetchOverpass(`[out:json][timeout:90];way["building"](${b.south},${b.west},${b.north},${b.east});out body qt;>;out skel qt;`, undefined, (host) => (bldStatus.textContent = `buildings: querying ${host}…`));
+    const set = buildingsFromOverpass(els as Parameters<typeof buildingsFromOverpass>[0], b);
+    applyBuildings(set, 'Overpass');
+    toast(`Loaded ${set.count} OSM buildings`, 'ok');
+  } catch (e) {
+    bldStatus.textContent = buildings.set ? `buildings: ${buildings.set.count} (${buildings.source})` : '';
+    toast(`Could not load buildings: ${(e as Error).message}`, 'error');
+  }
+}
+
 // ---------------------------------------------------------------- boot
 store.on('scenario', () => {
   roads = null;
@@ -339,6 +379,7 @@ requestAnimationFrame(frame);
 // Put users on real streets right away: the demo area ships with an OSM extract,
 // anywhere else is fetched live from Overpass.
 const BUNDLED = { url: `${import.meta.env.BASE_URL}roads/lviv-polytechnic.json`, south: 49.8176, west: 23.9862, north: 49.8536, east: 24.0422 };
+const BUNDLED_BUILDINGS = `${import.meta.env.BASE_URL}buildings/lviv-polytechnic.json`;
 (async () => {
   const c = store.scenario.center;
   if (c.lat > BUNDLED.south && c.lat < BUNDLED.north && c.lng > BUNDLED.west && c.lng < BUNDLED.east) {
@@ -350,6 +391,10 @@ const BUNDLED = { url: `${import.meta.env.BASE_URL}roads/lviv-polytechnic.json`,
       mapView.setArea(engine.area);
       resetSim();
       roadStatus.textContent = `roads: ${roads.wayCount} OSM ways (bundled)`;
+      fetch(BUNDLED_BUILDINGS)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((j: BundledBuildings) => applyBuildings(buildingsFromBundle(j), 'bundled'))
+        .catch(() => (bldStatus.textContent = ''));
       return;
     } catch {
       /* fall through to Overpass */

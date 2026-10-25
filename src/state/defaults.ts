@@ -21,6 +21,8 @@ export function defaultSettings(): Settings {
       sinrMinDb: -10,
       overhead: 0.25,
       gsmAdjacentRejectionDb: 18,
+      buildingEntry: 'traditional',
+      defaultBuildingHeightM: 12,
       precodingEfficiency: 0.5,
       muMimoEfficiency: 0.5,
       scheduler: 'rr',

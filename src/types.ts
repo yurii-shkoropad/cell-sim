@@ -2,7 +2,8 @@ export type Tech = 'GSM' | 'LTE' | 'NR';
 export const TECHS: Tech[] = ['GSM', 'LTE', 'NR'];
 
 export type Environment = 'urban-large' | 'urban-medium' | 'suburban' | 'rural';
-export type PathLossModel = 'auto' | 'okumura-hata' | 'cost231-hata';
+/** 'cost231-wi': Walfisch–Ikegami on OSM building geometry (Hata where there is no building data). */
+export type PathLossModel = 'auto' | 'okumura-hata' | 'cost231-hata' | 'cost231-wi';
 
 export interface Operator {
   id: string;
@@ -147,6 +148,10 @@ export interface RadioSettings {
   overhead: number;
   /** GSM adjacent channel rejection, dB. */
   gsmAdjacentRejectionDb: number;
+  /** Building entry loss for indoor UEs with the building model (ITU-R P.2109). */
+  buildingEntry: 'none' | 'traditional' | 'thermal';
+  /** Height used for OSM buildings without height / levels / type, m. */
+  defaultBuildingHeightM: number;
   /** Fraction (in dB) of the ideal transmit precoding gain 10·log10(Ntx/rank) realised by codebook MIMO. */
   precodingEfficiency: number;
   /** MU-MIMO pairing efficiency: each extra co-scheduled user adds this fraction of a cell's capacity. */

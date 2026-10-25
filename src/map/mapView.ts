@@ -6,11 +6,17 @@ import type { RadioContext } from '../radio/cells';
 import type { SimEngine, SimUser } from '../sim/engine';
 import type { RoadGraph } from '../sim/roads';
 import type { Store } from '../state/store';
+import type { BuildingSet } from '../radio/buildings';
 import type { BaseStation } from '../types';
 
 const TECH_SHORT = { GSM: '2G', LTE: '4G', NR: '5G' } as const;
 
 type UserMarker = L.CircleMarker & { uid: number };
+
+/** Sequential blue ramp by building height (reference palette steps 150–700). */
+const BUILDING_RAMP: [number, string][] = [[6, '#b7d3f6'], [12, '#86b6ef'], [18, '#5598e7'], [25, '#2a78d6'], [35, '#1c5cab'], [Infinity, '#0d366b']];
+export const buildingColor = (h: number) => BUILDING_RAMP.find(([max]) => h < max)![1];
+export const BUILDING_LEGEND = BUILDING_RAMP;
 
 /** Fill = state (idle / voice / data / no service); outline = mobility; fixed users are larger squares-ish. */
 function userStyle(u: SimUser): L.CircleMarkerOptions {
@@ -79,6 +85,7 @@ export class MapView {
     L.control.scale({ imperial: false }).addTo(this.map);
 
     this.map.createPane('heatmapPane').style.zIndex = '350';
+    this.map.createPane('buildingsPane').style.zIndex = '355';
     this.map.createPane('roadsPane').style.zIndex = '360';
     this.map.createPane('sectorPane').style.zIndex = '420';
     this.map.createPane('usersPane').style.zIndex = '440';
@@ -97,6 +104,9 @@ export class MapView {
       else store.select(null);
     });
     this.map.on('zoomend', () => this.renderSectors());
+    this.map.on('moveend', () => {
+      if (this.store.layers.showBuildings) this.renderBuildings();
+    });
 
     this.bannerText = L.DomUtil.create('span', 'place-text');
     this.banner = L.DomUtil.create('div', 'place-banner', this.map.getContainer());
@@ -396,6 +406,69 @@ export class MapView {
       this.map.on('mousemove', onMove);
       document.addEventListener('mouseup', onUp, { once: true });
     });
+  }
+
+  // ---------------------------------------------------------------- buildings
+
+  private buildingSet: BuildingSet | null = null;
+  private buildingDefaultH = 12;
+  private buildingBoxes: Float64Array | null = null;
+  private buildingLayer = L.layerGroup();
+  private buildingRenderer = L.canvas({ pane: 'buildingsPane' });
+
+  setBuildings(set: BuildingSet | null, defaultHeightM: number) {
+    this.buildingSet = set;
+    this.buildingDefaultH = defaultHeightM;
+    this.buildingBoxes = null;
+    if (set) {
+      // Per-building bounding boxes for fast view culling.
+      const b = new Float64Array(set.count * 4);
+      for (let i = 0; i < set.count; i++) {
+        let s = 90, w = 180, n = -90, e = -180;
+        for (let k = set.offsets[i]; k < set.offsets[i + 1]; k++) {
+          const la = set.coords[2 * k];
+          const ln = set.coords[2 * k + 1];
+          if (la < s) s = la;
+          if (la > n) n = la;
+          if (ln < w) w = ln;
+          if (ln > e) e = ln;
+        }
+        b.set([s, w, n, e], i * 4);
+      }
+      this.buildingBoxes = b;
+    }
+    this.renderBuildings();
+  }
+
+  /** Footprints in view, coloured by height (only from zoom 15: tens of thousands otherwise). */
+  renderBuildings() {
+    this.buildingLayer.clearLayers();
+    const set = this.buildingSet;
+    if (!this.store.layers.showBuildings || !set || !this.buildingBoxes) {
+      this.buildingLayer.remove();
+      return;
+    }
+    this.buildingLayer.addTo(this.map);
+    if (this.map.getZoom() < 15) return;
+    const v = this.map.getBounds().pad(0.1);
+    const vs = v.getSouth(), vw = v.getWest(), vn = v.getNorth(), ve = v.getEast();
+    const bx = this.buildingBoxes;
+    for (let i = 0; i < set.count; i++) {
+      if (bx[i * 4 + 2] < vs || bx[i * 4] > vn || bx[i * 4 + 3] < vw || bx[i * 4 + 1] > ve) continue;
+      const pts: [number, number][] = [];
+      for (let k = set.offsets[i]; k < set.offsets[i + 1]; k++) pts.push([set.coords[2 * k], set.coords[2 * k + 1]]);
+      const known = set.heights[i] > 0;
+      const hgt = known ? set.heights[i] : this.buildingDefaultH;
+      L.polygon(pts, {
+        renderer: this.buildingRenderer,
+        color: known ? '#184f95' : '#8a8984',
+        weight: 0.6,
+        dashArray: known ? undefined : '2 2',
+        fillColor: buildingColor(hgt),
+        fillOpacity: 0.55,
+        interactive: false,
+      }).addTo(this.buildingLayer);
+    }
   }
 
   // ---------------------------------------------------------------- roads / area

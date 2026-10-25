@@ -293,3 +293,4 @@ table.meas tr.cand td { color: #b26a00; }
 .cell-link { color: var(--accent); text-decoration: none; border-bottom: 1px dotted; }
 .station-inspector .sector-grid { margin: 0 -4px; }
 .station-inspector .field { grid-template-columns: 1fr 1.3fr; }
+.sub-block { border-left: 3px solid var(--surface-2); padding-left: 8px; margin: 6px 0; }

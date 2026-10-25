@@ -2,6 +2,10 @@ import L from 'leaflet';
 import type { RadioContext } from '../radio/cells';
 import type { HeatmapKind, Store } from '../state/store';
 import { MODULATIONS } from '../radio/modulation';
+import { PATH_COND_LABEL } from '../radio/buildingPaths';
+
+/** Unknown, LOS, NLOS, indoor. */
+const COND_COLORS = ['#888888', '#1baf7a', '#eb6834', '#4a3aa7'];
 import { isolateFromMap } from './mapView';
 import { colorAt, cssGradient, parseColor, RSRP_SCALE, RXLEV_SCALE, SINR_SCALE, THR_SCALE, type Scale } from './colors';
 import type { HeatmapRequest, HeatmapResult } from './heatmap.worker';
@@ -88,9 +92,15 @@ export class HeatmapLayer {
     const scn = this.store.scenario;
     const opIdx = lay.operatorFilter === 'all' ? -1 : scn.operators.findIndex((o) => o.id === lay.operatorFilter);
     const th = scn.settings.thresholds;
+    // Send the building path maps only when they changed (see heatmap.worker.ts).
+    let ctx = this.ctx;
+    if (ctx.paths) {
+      if (ctx.paths.version === this.sentPathsVersion) ctx = { ...ctx, paths: { loss: [], cond: [], version: ctx.paths.version } };
+      else this.sentPathsVersion = ctx.paths.version;
+    }
     const req: HeatmapRequest = {
       gen: ++this.gen,
-      ctx: this.ctx,
+      ctx,
       radio: scn.settings.radio,
       lats,
       lngs,
@@ -111,6 +121,7 @@ export class HeatmapLayer {
   }
 
   private pending: { lats: Float64Array; lngs: Float64Array; bounds: L.LatLngBounds } | null = null;
+  private sentPathsVersion = -1;
   private bounds: L.LatLngBounds | null = null;
 
   private onResult(r: HeatmapResult) {
@@ -144,6 +155,7 @@ export class HeatmapLayer {
     const scale = this.scale(kind);
     const cellRgb = this.ctx ? this.ctx.cells.map((c) => parseColor(c.color)) : [];
     const modRgb = MODULATIONS.map((m) => parseColor(m.color));
+    const condRgb = COND_COLORS.map((c) => parseColor(c));
     for (let k = 0; k < r.cols * r.rows; k++) {
       const srv = r.server[k];
       let rgb: [number, number, number] | null = null;
@@ -155,6 +167,7 @@ export class HeatmapLayer {
         else if (kind === 'sinr') rgb = colorAt(scale!, r.sinr[k]);
         else if (kind === 'throughput') rgb = r.thr[k] > 0 ? colorAt(scale!, r.thr[k]) : null;
         else if (kind === 'modulation') rgb = r.mod[k] >= 0 ? modRgb[r.mod[k]] : null;
+        else if (kind === 'condition') rgb = r.cond[k] ? condRgb[r.cond[k]] : null;
       }
       if (!rgb) continue;
       const o = k * 4;
@@ -222,6 +235,7 @@ export class HeatmapLayer {
     head.textContent =
       kind === 'server' ? `Best server · ${op} · ${tech}`
       : kind === 'modulation' ? `Modulation reached · ${op} · ${tech} (${us.ueRxLte}Rx LTE / ${us.ueRxNr}Rx NR UE)`
+      : kind === 'condition' ? `Propagation condition · ${op} · ${tech}`
       : `${scale!.title} (${scale!.unit}) · ${op} · ${tech}`;
     el.appendChild(head);
     if (scale) {
@@ -241,6 +255,21 @@ export class HeatmapLayer {
         ticks.appendChild(s);
       }
       el.appendChild(ticks);
+    } else if (kind === 'condition') {
+      const row = document.createElement('div');
+      row.className = 'legend-cats';
+      ([[1, 'LOS (street canyon)'], [2, 'NLOS (blocked by buildings)'], [3, 'Indoor (+ entry loss)']] as [number, string][]).forEach(([k, label]) => {
+        const s = document.createElement('span');
+        const i = document.createElement('i');
+        i.style.background = COND_COLORS[k];
+        s.append(i, label);
+        row.appendChild(s);
+      });
+      el.appendChild(row);
+      const note = document.createElement('div');
+      note.className = 'legend-note';
+      note.textContent = this.ctx?.paths ? 'Path from the best server, traced through OSM buildings.' : 'Needs the "COST-231 Walfisch–Ikegami + OSM buildings" model (Radio tab) and loaded buildings.';
+      el.appendChild(note);
     } else if (kind === 'modulation') {
       const row = document.createElement('div');
       row.className = 'legend-cats';
@@ -285,6 +314,7 @@ export class HeatmapLayer {
     const parts = [`${level} ${rs > -Infinity ? rs.toFixed(1) + ' dBm' : '—'}`];
     if (cell) {
       parts.push(`SINR ${r.sinr[k].toFixed(1)} dB`, `${cell.name} (${cell.tech}, PCI ${cell.pci})`);
+      if (r.cond[k]) parts.push(PATH_COND_LABEL[r.cond[k]]);
       if (cell.tech !== 'GSM') {
         // The map assumes a typical phone, not any particular user (see Users → Rx antennas).
         const us = this.store.scenario.settings.users;

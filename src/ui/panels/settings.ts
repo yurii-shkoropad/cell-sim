@@ -1,5 +1,6 @@
 import { newId } from '../../radio/presets';
 import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
+import { BUILDING_LEGEND } from '../../map/mapView';
 import { TECHS, type FixedUser, type Mobility, type Tech, type TechThresholds, type TrafficMode } from '../../types';
 import type { App } from '../app';
 import { button, checkField, clear, h, numField, section, selectField } from '../dom';
@@ -218,10 +219,12 @@ export function radioPanel(app: App): HTMLElement {
           r.environment = v;
           set();
         }),
-        selectField('Path-loss model', [['auto', 'Auto (Hata ≤1500 MHz, COST-231 above)'], ['okumura-hata', 'Okumura-Hata'], ['cost231-hata', 'COST-231 Hata']], () => r.model, (v) => {
+        selectField('Path-loss model', [['auto', 'Auto (Hata ≤1500 MHz, COST-231 above)'], ['okumura-hata', 'Okumura-Hata'], ['cost231-hata', 'COST-231 Hata'], ['cost231-wi', 'COST-231 Walfisch–Ikegami + OSM buildings']], () => r.model, (v) => {
           r.model = v;
           set();
+          render();
         }),
+        r.model === 'cost231-wi' ? buildingsBlock(app, set) : '',
         numField('UE antenna height', () => r.ueHeightM, (v) => {
           r.ueHeightM = v;
           set();
@@ -319,6 +322,41 @@ export function radioPanel(app: App): HTMLElement {
   return root;
 }
 
+/** Building model options and data status (shown when the Walfisch–Ikegami model is selected). */
+function buildingsBlock(app: App, changed: () => void): HTMLElement {
+  const r = app.store.scenario.settings.radio;
+  const status = h('div', { class: 'status-line' });
+  const upd = () => {
+    const b = app.buildings();
+    status.textContent = b.set ? `${b.set.count} OSM buildings loaded (${b.source}). Paths are traced up to 4 km from each site; beyond that, or outside the data, Hata is used.` : 'No buildings loaded: Hata is used everywhere until you load them.';
+  };
+  upd();
+  app.onLiveTick(upd);
+  const btn = button('Load OSM buildings for current view', async () => {
+    btn.disabled = true;
+    try {
+      await app.loadBuildings();
+    } finally {
+      btn.disabled = false;
+      upd();
+    }
+  });
+  return h('div', { class: 'sub-block' },
+    h('p', { class: 'hint' }, 'Each site casts rays through OSM building footprints and heights. A direct path not cut by any building is LOS (street-canyon formula); a blocked one adds rooftop-to-street diffraction from the last building’s height and multi-screen diffraction over the buildings crossed. UEs inside a footprint get building entry loss. With buildings modelled explicitly, a smaller shadowing σ (≈ 4 dB) is appropriate.'),
+    selectField('Building entry loss', [['traditional', 'Traditional building (ITU-R P.2109)'], ['thermal', 'Thermally efficient (P.2109)'], ['none', 'None']], () => r.buildingEntry, (v) => {
+      r.buildingEntry = v;
+      changed();
+    }),
+    numField('Default building height', () => r.defaultBuildingHeightM, (v) => {
+      r.defaultBuildingHeightM = v;
+      app.mapView.setBuildings(app.buildings().set, v);
+      changed();
+    }, { min: 2, max: 100, step: 1, unit: 'm', title: 'For OSM buildings without height, levels or a recognised type' }),
+    status,
+    h('div', { class: 'row' }, btn),
+  );
+}
+
 function thresholdTable(th: Record<Tech, TechThresholds>, changed: () => void): HTMLElement {
   const rows: [keyof TechThresholds, string, string][] = [
     ['minRxDbm', 'Min level (camp/serve)', 'dBm'],
@@ -361,7 +399,7 @@ export function layersPanel(app: App): HTMLElement {
     };
     root.append(
       section('Coverage heatmap',
-        selectField('Layer', [['none', 'Off'], ['rsrp', 'Signal level (RSRP / RxLev)'], ['server', 'Best server'], ['sinr', 'SINR / C/(I+N)'], ['throughput', 'Peak DL throughput'], ['modulation', 'Modulation reached']], () => l.heatmap, (v) => {
+        selectField('Layer', [['none', 'Off'], ['rsrp', 'Signal level (RSRP / RxLev)'], ['server', 'Best server'], ['sinr', 'SINR / C/(I+N)'], ['throughput', 'Peak DL throughput'], ['modulation', 'Modulation reached'], ['condition', 'Propagation condition (LOS / NLOS / indoor)']], () => l.heatmap, (v) => {
           l.heatmap = v;
           changed(true);
           app.mapView.renderSectors();
@@ -400,6 +438,14 @@ export function layersPanel(app: App): HTMLElement {
           l.showRoads = v;
           app.mapView.setRoadsVisible(v);
         }),
+        checkField('Buildings (by height, from zoom 15)', () => l.showBuildings, (v) => {
+          l.showBuildings = v;
+          app.mapView.renderBuildings();
+          render(); // show/hide the height legend
+        }, 'OSM footprints coloured by height; dashed outline = height unknown (default used)'),
+        l.showBuildings
+          ? h('div', { class: 'legend-users' }, ...BUILDING_LEGEND.map(([max, c], i) => h('span', null, h('i', { style: `background:${c};border-radius:2px` }), i === BUILDING_LEGEND.length - 1 ? `≥ ${BUILDING_LEGEND[i - 1][0]} m` : `< ${max} m`)))
+          : '',
         h('div', { class: 'legend-users' },
           h('span', null, h('i', { style: 'background:#9e9e9e' }), 'idle'),
           h('span', null, h('i', { style: 'background:#1565c0' }), 'voice'),

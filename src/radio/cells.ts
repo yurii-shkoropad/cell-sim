@@ -1,9 +1,10 @@
 import { LocalProjection } from '../geo';
-import type { RadioSettings, Scenario, Tech } from '../types';
+import type { BaseStation, RadioSettings, Scenario, Tech } from '../types';
 import { antennaAttenuation } from './antenna';
 import { antennaType, bestRank, validAntennaFor, type RankChoice } from './mimo';
 import { modulation, modulationForSe, validModulationFor, type Modulation, type ModulationKey } from './modulation';
 import { MIN_DISTANCE_KM, pathLossCoeffs } from './propagation';
+import { PathCond, pathSampleIndex, type StationPaths } from './buildingPaths';
 import { schedulerInfo, type SchedulerKey } from '../sim/scheduler';
 import { gsmTrafficChannels, occupiedBandwidthMHz, powerUnits, rbBandwidthHz, resourceBlocks } from './presets';
 import { seedFromString, shadowingDb } from './shadowing';
@@ -61,6 +62,8 @@ export interface CellRF {
   seMax: number;
   /** Station's scheduler override, or null to use the global setting. */
   scheduler: SchedulerKey | null;
+  /** Index into RadioContext.paths, or −1 (Hata). */
+  pathMap: number;
 }
 
 export interface RadioContext {
@@ -73,7 +76,12 @@ export interface RadioContext {
   decorr: number;
   lat0: number;
   lng0: number;
+  /** Building-aware path maps (COST-231 WI on OSM buildings), indexed by CellRF.pathMap. */
+  paths: { loss: Float32Array[]; cond: Uint8Array[]; version: number } | null;
 }
+
+/** Supplies a station's building path map, or null to use Hata for it. */
+export type PathProvider = (bs: BaseStation, x: number, y: number) => StationPaths | null;
 
 const PALETTE = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#469990', '#9a6324', '#800000', '#808000', '#000075', '#e6beff', '#ffd8b1', '#aaffc3', '#fabed4', '#dcbeff', '#ff6f00', '#00897b'];
 
@@ -83,16 +91,21 @@ export function cellColor(idx: number): string {
   return `hsl(${h.toFixed(0)}, 70%, 50%)`;
 }
 
-export function buildRadioContext(scn: Scenario): RadioContext {
+export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVersion = 0): RadioContext {
   const r = scn.settings.radio;
   const proj = new LocalProjection(scn.center.lat, scn.center.lng);
   const opIndex = new Map(scn.operators.map((o, i) => [o.id, i]));
   const cells: CellRF[] = [];
+  const pathLoss: Float32Array[] = [];
+  const pathCond: Uint8Array[] = [];
 
   for (const bs of scn.stations) {
     if (!bs.enabled) continue;
     const { x, y } = proj.toXY(bs.lat, bs.lng);
     const siteSeed = seedFromString(bs.id);
+    const sp = paths && r.model === 'cost231-wi' ? paths(bs, x, y) : null;
+    const pathMap = sp ? pathLoss.push(sp.loss) - 1 : -1;
+    if (sp) pathCond.push(sp.cond);
     bs.sectors.forEach((s, si) => {
       if (!s.enabled) return;
       const bw = bs.tech === 'GSM' ? 0.2 : bs.bandwidthMHz;
@@ -143,6 +156,7 @@ export function buildRadioContext(scn: Scenario): RadioContext {
           return { modulation: m.key, seMax: m.seMax };
         })(),
         scheduler: schedulerInfo(bs.scheduler)?.key ?? null,
+        pathMap,
       });
     });
   }
@@ -156,6 +170,7 @@ export function buildRadioContext(scn: Scenario): RadioContext {
     decorr: r.shadowingDecorrM,
     lat0: scn.center.lat,
     lng0: scn.center.lng,
+    paths: pathLoss.length ? { loss: pathLoss, cond: pathCond, version: pathsVersion } : null,
   };
 }
 
@@ -191,13 +206,32 @@ export function rxLevel(ctx: RadioContext, c: CellRF, x: number, y: number): num
   if (brg < 0) brg += 360;
   const elev = Math.atan2(c.hb - ctx.hm, Math.max(d, 1)) * DEG;
   const att = antennaAttenuation(brg - c.azimuth, elev, c.hbw, c.vbw, c.tilt, c.ftb);
-  // Inlined pathLoss() (hot loop): Hata median, floored at free space.
-  const ld = Math.log10(Math.max(d / 1000, MIN_DISTANCE_KM));
-  const hata = c.plA + c.plB * ld;
-  const fs = c.fsConst + 20 * ld;
-  const pl = hata > fs ? hata : fs;
+  let pl = NaN;
+  if (c.pathMap >= 0 && ctx.paths) {
+    // Building-aware path loss from the station's precomputed polar map.
+    const k = pathSampleIndex(d, brg);
+    if (k >= 0) pl = ctx.paths.loss[c.pathMap][k];
+  }
+  if (pl !== pl) {
+    // Inlined pathLoss() (hot loop): Hata median, floored at free space.
+    const ld = Math.log10(Math.max(d / 1000, MIN_DISTANCE_KM));
+    const hata = c.plA + c.plB * ld;
+    const fs = c.fsConst + 20 * ld;
+    pl = hata > fs ? hata : fs;
+  }
   const sh = ctx.shadowing ? shadowingDb(c.siteSeed, x, y, ctx.sigma, ctx.decorr) : 0;
   return c.refTxDbm + c.gain + c.bfGainDb + att - pl - sh;
+}
+
+/** LOS / NLOS / indoor for the path from cell c to (x,y), or Unknown when Hata is used there. */
+export function pathCondition(ctx: RadioContext, c: CellRF, x: number, y: number): number {
+  if (c.pathMap < 0 || !ctx.paths) return PathCond.Unknown;
+  const dx = x - c.x;
+  const dy = y - c.y;
+  let brg = Math.atan2(dx, dy) * DEG;
+  if (brg < 0) brg += 360;
+  const k = pathSampleIndex(Math.sqrt(dx * dx + dy * dy), brg);
+  return k >= 0 ? ctx.paths.cond[c.pathMap][k] : PathCond.Unknown;
 }
 
 export const dbmToMw = (dbm: number) => Math.pow(10, dbm / 10);

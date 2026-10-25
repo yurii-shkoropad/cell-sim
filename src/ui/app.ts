@@ -4,6 +4,7 @@ import type { RadioContext } from '../radio/cells';
 import type { SimEngine } from '../sim/engine';
 import type { RoadGraph } from '../sim/roads';
 import type { Store } from '../state/store';
+import type { BuildingModel } from '../radio/buildingModel';
 
 /** Services shared by the UI panels. */
 export interface App {
@@ -14,6 +15,8 @@ export interface App {
   ctx(): RadioContext;
   roads(): RoadGraph | null;
   loadRoads(): Promise<void>;
+  buildings(): BuildingModel;
+  loadBuildings(): Promise<void>;
   respawnUsers(): void;
   /** Delete all random and fixed users, and set the random user count to 0. */
   deleteAllUsers(): void;

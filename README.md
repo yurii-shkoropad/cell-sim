@@ -18,7 +18,8 @@ npm test           # unit tests for the radio models, engine, planning and impor
 npm run build      # static bundle in dist/ (relative paths, so any static host works)
 ```
 
-The app opens on the **Lviv Polytechnic** demo scenario. It has three operators, LTE 1800 hex grids,
+The app opens on the **Lviv Polytechnic** demo scenario. The demo area also ships OSM building footprints
+and heights (`public/buildings/lviv-polytechnic.json`) for the building-aware path-loss model. It has three operators, LTE 1800 hex grids,
 a GSM 900 layer with 4/12 reuse and an NR 3500 site. The road network for that area ships with the
 app (`public/roads/lviv-polytechnic.json`, © OpenStreetMap contributors, ODbL). Anywhere else, roads
 are fetched live from Overpass (Users → *Load OSM roads for current view*). The public Overpass
@@ -86,7 +87,8 @@ The **Models** tab in the app has the full formulas. In short:
 
 | Area | Model |
 |---|---|
-| Path loss | Okumura-Hata (≤1500 MHz) / COST-231 Hata (>1500 MHz), with environment corrections and a free-space floor |
+| Path loss | Okumura-Hata (≤1500 MHz) / COST-231 Hata (>1500 MHz), with environment corrections and a free-space floor; or **COST-231 Walfisch–Ikegami on OSM buildings** |
+| Buildings | Footprints and heights (`height`, `building:levels`, type) rasterised at 3 m; 720 rays per site up to 4 km; exact LOS test, rooftop-to-street and multi-screen diffraction from actual roof heights and spacing; ITU-R P.2109 building entry loss for indoor UEs |
 | Antenna | 3GPP TR 36.814 parabolic horizontal and vertical pattern, with tilt and front-to-back limit |
 | Shadowing | Log-normal truncated at ±3σ, spatially correlated (lattice at the decorrelation distance, per site) |
 | SINR | Wideband, spectrum-overlap weighted, load weighted; thermal noise is kTB + NF |
@@ -103,7 +105,9 @@ The **Models** tab in the app has the full formulas. In short:
 - Hata models are empirical. They are valid for 1–20 km and antennas 30–200 m high. Small cells,
   short distances and frequencies above 2 GHz (LTE 2600, NR 3500) are **extrapolated**, and the
   app flags this.
-- Path loss ignores buildings and terrain. Only the statistical shadowing accounts for obstructions.
+- Hata models ignore buildings; only the statistical shadowing accounts for obstructions. The Walfisch–Ikegami
+  model uses OSM buildings but no terrain, no reflections, and a fixed street orientation (φ = 90°).
+  OSM building heights are often missing, in which case levels, building type, or a default are used.
 - Only the downlink is modelled. UMTS is not modelled; UMTS rows are skipped on import.
 - Beamforming is approximated by a static array gain; there are no per-beam patterns. MIMO uses an
   abstract rank-adaptation model rather than channel matrices, and has no interference rejection.

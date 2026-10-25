@@ -1,7 +1,7 @@
 import type { BaseStation, Scenario, Settings, Tech } from '../types';
 import { defaultScenario, defaultSettings } from './defaults';
 
-export type HeatmapKind = 'none' | 'rsrp' | 'server' | 'sinr' | 'throughput' | 'modulation';
+export type HeatmapKind = 'none' | 'rsrp' | 'server' | 'sinr' | 'throughput' | 'modulation' | 'condition';
 
 export interface LayerState {
   heatmap: HeatmapKind;
@@ -14,6 +14,7 @@ export interface LayerState {
   showUsers: boolean;
   showLinks: boolean;
   showRoads: boolean;
+  showBuildings: boolean;
 }
 
 type EventName = 'network' | 'settings' | 'selection' | 'layers' | 'scenario' | 'users';
@@ -35,6 +36,7 @@ export class Store {
     showUsers: true,
     showLinks: false,
     showRoads: false,
+    showBuildings: false,
   };
   private listeners = new Map<EventName, Set<Listener>>();
   private saveTimer = 0;
