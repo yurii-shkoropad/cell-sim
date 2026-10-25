@@ -1,12 +1,18 @@
 import type { LocalProjection } from '../geo';
 
-/** Building footprints with heights. Polygons are rings of [lat, lng]. */
+/**
+ * Building footprints with heights. A building has one or more rings of [lat, lng]
+ * (OSM multipolygons: outer outlines and inner courtyards). Filling uses the
+ * even-odd rule over all of a building's rings, so courtyards stay open.
+ */
 export interface BuildingSet {
   bounds: { south: number; west: number; north: number; east: number };
   /** Height in metres, or 0 when OSM has no height / levels / type hint (the default applies). */
   heights: Float32Array;
-  /** Start of each polygon in `coords` (pairs), length = count + 1. */
-  offsets: Uint32Array;
+  /** First ring of each building in `ringOffsets`, length = count + 1. */
+  ringStart: Uint32Array;
+  /** Start of each ring in `coords` (pairs), length = rings + 1. */
+  ringOffsets: Uint32Array;
   /** Flat [lat, lng, lat, lng, …]. */
   coords: Float64Array;
   count: number;
@@ -37,57 +43,135 @@ export function heightFromTags(t: Record<string, string>): number {
   return TYPE_HEIGHT[t.building] ?? 0;
 }
 
+/** Accumulates buildings ring by ring into a BuildingSet. */
+class SetBuilder {
+  heights: number[] = [];
+  ringStart: number[] = [0];
+  ringOffsets: number[] = [0];
+  coords: number[] = [];
+
+  add(height: number, rings: [number, number][][]) {
+    rings = rings.filter((r) => r.length >= 3);
+    if (!rings.length) return;
+    for (const ring of rings) {
+      for (const [la, ln] of ring) this.coords.push(la, ln);
+      this.ringOffsets.push(this.coords.length / 2);
+    }
+    this.heights.push(height);
+    this.ringStart.push(this.ringOffsets.length - 1);
+  }
+
+  build(bounds: BuildingSet['bounds']): BuildingSet {
+    return {
+      bounds,
+      heights: Float32Array.from(this.heights),
+      ringStart: Uint32Array.from(this.ringStart),
+      ringOffsets: Uint32Array.from(this.ringOffsets),
+      coords: Float64Array.from(this.coords),
+      count: this.heights.length,
+    };
+  }
+}
+
+/** Join open ways into closed rings by matching endpoints (OSM multipolygon members). */
+export function stitchRings(lines: number[][]): number[][] {
+  const rings: number[][] = [];
+  const pool = lines.filter((l) => l.length >= 2).map((l) => [...l]);
+  while (pool.length) {
+    const ring = pool.pop()!;
+    let grown = true;
+    while (ring[0] !== ring[ring.length - 1] && grown) {
+      grown = false;
+      const end = ring[ring.length - 1];
+      for (let i = 0; i < pool.length; i++) {
+        const l = pool[i];
+        if (l[0] === end) ring.push(...l.slice(1));
+        else if (l[l.length - 1] === end) ring.push(...l.slice(0, -1).reverse());
+        else continue;
+        pool.splice(i, 1);
+        grown = true;
+        break;
+      }
+    }
+    // An unclosed leftover still contributes its edges; the fill closes it implicitly.
+    rings.push(ring);
+  }
+  return rings;
+}
+
 interface OsmEl {
   type: string;
   id: number;
   lat?: number;
   lon?: number;
   nodes?: number[];
+  members?: { type: string; ref: number; role: string }[];
   tags?: Record<string, string>;
 }
 
-/** Building ways from an Overpass `way["building"]…; >; out skel` response. */
+const isBuilding = (t: Record<string, string> | undefined) => !!t?.building && t.building !== 'no' && t.building !== 'roof' && t.location !== 'underground';
+
+/**
+ * Buildings from an Overpass response with building ways and multipolygon
+ * relations (`… out body; >; out skel;`). Relation member ways are stitched into
+ * rings; outer and inner rings are kept together so courtyards stay holes.
+ */
 export function buildingsFromOverpass(els: OsmEl[], bounds: BuildingSet['bounds']): BuildingSet {
   const nodes = new Map<number, [number, number]>();
-  for (const e of els) if (e.type === 'node' && e.lat !== undefined && e.lon !== undefined) nodes.set(e.id, [e.lat, e.lon]);
-  const heights: number[] = [];
-  const offsets: number[] = [0];
-  const coords: number[] = [];
+  const ways = new Map<number, number[]>();
   for (const e of els) {
-    if (e.type !== 'way' || !e.tags?.building || !e.nodes || e.nodes.length < 4) continue;
-    if (e.tags.building === 'no' || e.tags.building === 'roof' || e.tags.location === 'underground') continue;
-    const pts = e.nodes.map((n) => nodes.get(n)).filter((p): p is [number, number] => !!p);
-    if (pts.length < 3) continue;
-    for (const [la, ln] of pts) coords.push(la, ln);
-    heights.push(heightFromTags(e.tags));
-    offsets.push(coords.length / 2);
+    if (e.type === 'node' && e.lat !== undefined && e.lon !== undefined) nodes.set(e.id, [e.lat, e.lon]);
+    else if (e.type === 'way' && e.nodes) ways.set(e.id, e.nodes);
   }
-  return { bounds, heights: Float32Array.from(heights), offsets: Uint32Array.from(offsets), coords: Float64Array.from(coords), count: heights.length };
+  const toLatLng = (ring: number[]) => ring.map((n) => nodes.get(n)).filter((p): p is [number, number] => !!p);
+  const out = new SetBuilder();
+  const seen = new Set<string>();
+  for (const e of els) {
+    if (!isBuilding(e.tags)) continue;
+    const key = `${e.type}/${e.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (e.type === 'way' && e.nodes && e.nodes.length >= 4) out.add(heightFromTags(e.tags!), [toLatLng(e.nodes)]);
+    else if (e.type === 'relation' && e.members && e.tags?.type === 'multipolygon') {
+      const lines = e.members
+        .filter((m) => m.type === 'way' && (m.role === 'outer' || m.role === 'inner' || m.role === ''))
+        .map((m) => ways.get(m.ref))
+        .filter((w): w is number[] => !!w);
+      out.add(heightFromTags(e.tags), stitchRings(lines).map(toLatLng));
+    }
+  }
+  return out.build(bounds);
 }
 
-/** Compact extract shipped with the app: per building [height_dm, lat0·1e6, lng0·1e6, Δlat, Δlng, …]. */
+/**
+ * Compact extract shipped with the app. Per building:
+ * [height_dm, n1, lat0·1e6, lng0·1e6, Δlat, Δlng, … (n1 points), n2, lat0, lng0, …] — one group per ring.
+ */
 export interface BundledBuildings {
   bounds: BuildingSet['bounds'];
   b: number[][];
 }
 
 export function buildingsFromBundle(j: BundledBuildings): BuildingSet {
-  const heights: number[] = [];
-  const offsets: number[] = [0];
-  const coords: number[] = [];
+  const out = new SetBuilder();
   for (const row of j.b) {
-    heights.push(row[0] / 10);
-    let la = row[1];
-    let ln = row[2];
-    coords.push(la / 1e6, ln / 1e6);
-    for (let k = 3; k + 1 < row.length; k += 2) {
-      la += row[k];
-      ln += row[k + 1];
-      coords.push(la / 1e6, ln / 1e6);
+    const rings: [number, number][][] = [];
+    let k = 1;
+    while (k < row.length) {
+      const n = row[k++];
+      let la = row[k++];
+      let ln = row[k++];
+      const ring: [number, number][] = [[la / 1e6, ln / 1e6]];
+      for (let i = 1; i < n; i++) {
+        la += row[k++];
+        ln += row[k++];
+        ring.push([la / 1e6, ln / 1e6]);
+      }
+      rings.push(ring);
     }
-    offsets.push(coords.length / 2);
+    out.add(row[0] / 10, rings);
   }
-  return { bounds: j.bounds, heights: Float32Array.from(heights), offsets: Uint32Array.from(offsets), coords: Float64Array.from(coords), count: heights.length };
+  return out.build(j.bounds);
 }
 
 /** Buildings rasterised on a regular grid in local metres: building id (+1, 0 = none) and height. */
@@ -105,7 +189,10 @@ export interface BuildingRaster {
 
 let rasterVersion = 0;
 
-/** Scanline-fill every footprint into the grid; overlapping parts keep the taller building. */
+/**
+ * Scanline-fill every building into the grid using the even-odd rule over all its
+ * rings (inner courtyards stay empty); overlapping buildings keep the taller one.
+ */
 export function rasterize(set: BuildingSet, proj: LocalProjection, defaultHeightM: number, res = 3): BuildingRaster {
   const sw = proj.toXY(set.bounds.south, set.bounds.west);
   const ne = proj.toXY(set.bounds.north, set.bounds.east);
@@ -115,32 +202,41 @@ export function rasterize(set: BuildingSet, proj: LocalProjection, defaultHeight
   const h = new Float32Array(nx * ny);
   const xs: number[] = [];
   const ys: number[] = [];
+  const ringEnd: number[] = [];
   const cross: number[] = [];
   for (let b = 0; b < set.count; b++) {
     const height = set.heights[b] > 0 ? set.heights[b] : defaultHeightM;
+    // All rings' vertices in grid coords; ringEnd[r] marks where ring r stops.
     xs.length = 0;
     ys.length = 0;
+    ringEnd.length = 0;
     let minY = Infinity;
     let maxY = -Infinity;
-    for (let k = set.offsets[b]; k < set.offsets[b + 1]; k++) {
-      const p = proj.toXY(set.coords[2 * k], set.coords[2 * k + 1]);
-      const gx = (p.x - sw.x) / res;
-      const gy = (p.y - sw.y) / res;
-      xs.push(gx);
-      ys.push(gy);
-      if (gy < minY) minY = gy;
-      if (gy > maxY) maxY = gy;
+    for (let ri = set.ringStart[b]; ri < set.ringStart[b + 1]; ri++) {
+      for (let k = set.ringOffsets[ri]; k < set.ringOffsets[ri + 1]; k++) {
+        const p = proj.toXY(set.coords[2 * k], set.coords[2 * k + 1]);
+        const gy = (p.y - sw.y) / res;
+        xs.push((p.x - sw.x) / res);
+        ys.push(gy);
+        if (gy < minY) minY = gy;
+        if (gy > maxY) maxY = gy;
+      }
+      ringEnd.push(xs.length);
     }
-    const n = xs.length;
     const r0 = Math.max(0, Math.floor(minY));
     const r1 = Math.min(ny - 1, Math.ceil(maxY));
     for (let row = r0; row <= r1; row++) {
       const yc = row + 0.5;
       cross.length = 0;
-      for (let i = 0, j = n - 1; i < n; j = i++) {
-        const yi = ys[i];
-        const yj = ys[j];
-        if (yi > yc !== yj > yc) cross.push(xs[i] + ((yc - yi) / (yj - yi)) * (xs[j] - xs[i]));
+      // Even-odd crossings over every ring's edges: inner rings punch holes.
+      let start = 0;
+      for (const end of ringEnd) {
+        for (let i = start, j = end - 1; i < end; j = i++) {
+          const yi = ys[i];
+          const yj = ys[j];
+          if (yi > yc !== yj > yc) cross.push(xs[i] + ((yc - yi) / (yj - yi)) * (xs[j] - xs[i]));
+        }
+        start = end;
       }
       if (cross.length < 2) continue;
       cross.sort((a, c) => a - c);

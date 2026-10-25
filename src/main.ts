@@ -354,7 +354,7 @@ async function loadBuildings() {
   }
   bldStatus.textContent = 'buildings: loading…';
   try {
-    const els = await fetchOverpass(`[out:json][timeout:90];way["building"](${b.south},${b.west},${b.north},${b.east});out body qt;>;out skel qt;`, undefined, (host) => (bldStatus.textContent = `buildings: querying ${host}…`));
+    const els = await fetchOverpass(`[out:json][timeout:90];(way["building"](${b.south},${b.west},${b.north},${b.east});rel["building"]["type"="multipolygon"](${b.south},${b.west},${b.north},${b.east}););out body qt;>;out skel qt;`, undefined, (host) => (bldStatus.textContent = `buildings: querying ${host}…`));
     const set = buildingsFromOverpass(els as Parameters<typeof buildingsFromOverpass>[0], b);
     applyBuildings(set, 'Overpass');
     toast(`Loaded ${set.count} OSM buildings`, 'ok');

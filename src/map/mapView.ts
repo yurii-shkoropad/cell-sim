@@ -425,7 +425,7 @@ export class MapView {
       const b = new Float64Array(set.count * 4);
       for (let i = 0; i < set.count; i++) {
         let s = 90, w = 180, n = -90, e = -180;
-        for (let k = set.offsets[i]; k < set.offsets[i + 1]; k++) {
+        for (let k = set.ringOffsets[set.ringStart[i]]; k < set.ringOffsets[set.ringStart[i + 1]]; k++) {
           const la = set.coords[2 * k];
           const ln = set.coords[2 * k + 1];
           if (la < s) s = la;
@@ -455,11 +455,16 @@ export class MapView {
     const bx = this.buildingBoxes;
     for (let i = 0; i < set.count; i++) {
       if (bx[i * 4 + 2] < vs || bx[i * 4] > vn || bx[i * 4 + 3] < vw || bx[i * 4 + 1] > ve) continue;
-      const pts: [number, number][] = [];
-      for (let k = set.offsets[i]; k < set.offsets[i + 1]; k++) pts.push([set.coords[2 * k], set.coords[2 * k + 1]]);
+      // Outer outline(s) and courtyards; Leaflet fills multi-ring polygons with holes.
+      const rings: [number, number][][] = [];
+      for (let ri = set.ringStart[i]; ri < set.ringStart[i + 1]; ri++) {
+        const ring: [number, number][] = [];
+        for (let k = set.ringOffsets[ri]; k < set.ringOffsets[ri + 1]; k++) ring.push([set.coords[2 * k], set.coords[2 * k + 1]]);
+        rings.push(ring);
+      }
       const known = set.heights[i] > 0;
       const hgt = known ? set.heights[i] : this.buildingDefaultH;
-      L.polygon(pts, {
+      L.polygon(rings, {
         renderer: this.buildingRenderer,
         color: known ? '#184f95' : '#8a8984',
         weight: 0.6,
