@@ -900,7 +900,7 @@ export class SimEngine {
    * Pure: reads the users' current SINR and demand, changes nothing, so it also
    * serves what-if comparisons on the same snapshot.
    */
-  private allocateCell(i: number, sched: SchedulerKey, list: SimUser[]) {
+  private allocateCell(i: number, sched: SchedulerKey, list: SimUser[], demandOverrideMbps?: number) {
     const r = this.settings.radio;
     const c = this.ctx.cells[i];
     const thr = new Float64Array(list.length);
@@ -919,7 +919,7 @@ export class SimEngine {
         free -= need;
         gbr += need;
         thr[k] = need * rate;
-      } else data.push({ k, rate, need: u.session!.demandMbps / rate });
+      } else data.push({ k, rate, need: (demandOverrideMbps ?? u.session!.demandMbps) / rate });
     });
     // Channel-aware schedulers (PF, Max C/I) serve users near their fading peaks,
     // raising the rate during their share (multi-user diversity, grows with users).
@@ -930,7 +930,7 @@ export class SimEngine {
         const boosted = linkRank(c, u.sinr + g, this.ueRx(u), r);
         d.rate = boosted.se * rbMbps;
         rank[d.k] = boosted.rank;
-        d.need = u.session!.demandMbps / d.rate;
+        d.need = (demandOverrideMbps ?? u.session!.demandMbps) / d.rate;
       }
     }
     // MU-MIMO: co-scheduled data users reuse the same RBs, so the data pool grows
@@ -951,8 +951,12 @@ export class SimEngine {
    * would get if all LTE/NR cells used each scheduler, with demand and per-cell
    * fairness. Same users, positions, SINR and demands for every scheduler. GSM users
    * are left out: they get a fixed GPRS timeslot whatever the scheduler.
+   *
+   * `fullBuffer`: every data user wants as much as it can get (standard scheduler
+   * comparison). Otherwise uncongested cells serve every demand in full and all
+   * schedulers coincide. Fairness is then Jain over throughput instead of satisfaction.
    */
-  compareSchedulers(scheds: SchedulerKey[]): Record<string, { thr: number[]; fairness: number }> & { demand: number[] } {
+  compareSchedulers(scheds: SchedulerKey[], fullBuffer = false): Record<string, { thr: number[]; fairness: number }> & { demand: number[] } {
     const C = this.ctx.cells.length;
     const perCell: SimUser[][] = Array.from({ length: C }, () => []);
     const demand: number[] = [];
@@ -968,19 +972,19 @@ export class SimEngine {
       for (let i = 0; i < C; i++) {
         const list = perCell[i];
         if (!list.length) continue;
-        const a = this.allocateCell(i, sched, list);
+        const a = this.allocateCell(i, sched, list, fullBuffer ? Infinity : undefined);
         list.forEach((u, k) => {
           if (u.session!.kind !== 'data') return;
           const t = a.thr[k];
           thr.push(t);
           const l = satByCell.get(i) ?? [];
-          l.push(Math.min(1, t / Math.max(u.session!.demandMbps, 1e-9)));
+          l.push(fullBuffer ? t : Math.min(1, t / Math.max(u.session!.demandMbps, 1e-9)));
           satByCell.set(i, l);
         });
       }
       out[sched] = { thr, fairness: meanCellFairness(satByCell) };
     }
-    return Object.assign(out, { demand });
+    return Object.assign(out, { demand: fullBuffer ? [] : demand });
   }
 
   /** Resource allocation: GBR voice first, then max-min fair water-filling for data. */

@@ -65,13 +65,26 @@ export function kpiPanel(app: App): HTMLElement {
   const thrCdfTitle = h('div', { class: 'chart-title' }, 'DL throughput distribution of active data users (CDF)');
   // View: live served vs. demand, or a what-if comparison of all schedulers.
   let compare = false;
+  let fullBuffer = false;
   try {
     compare = localStorage.getItem('radio-sim.cdf-compare') === '1';
+    fullBuffer = localStorage.getItem('radio-sim.cdf-fullbuffer') === '1';
   } catch {
     /* ignore */
   }
+  const fbBox = h('input', { type: 'checkbox', checked: fullBuffer, onchange: () => {
+    fullBuffer = fbBox.checked;
+    try {
+      localStorage.setItem('radio-sim.cdf-fullbuffer', fullBuffer ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+    update();
+  } });
+  const fbField = h('label', { class: 'field check', title: 'Every data user wants as much as it can get, so schedulers differ at any load (the standard way to compare them)' }, fbBox, h('span', null, 'Full buffer (every data user wants maximum throughput)'));
+  const cmpWarn = h('div', { class: 'callout' });
   const cmpTable = h('div', { class: 'cmp-table' });
-  const cmpNote = h('div', { class: 'hint' }, 'What-if on the current snapshot: the same LTE/NR users, positions, SINR and demands, as if every LTE/NR cell used each scheduler (GSM users get a fixed GPRS slot and are left out).');
+  const cmpNote = h('div', { class: 'hint' }, 'What-if on the current snapshot: the same LTE/NR users, positions, SINR and demands, as if every LTE/NR cell used each scheduler (GSM users get a fixed GPRS slot and are left out). Fairness is Jain per cell over throughput ÷ demand, or over throughput with full buffer.');
   const modeChips = h('div', { class: 'chips' });
   const renderModeChips = () => {
     clear(modeChips);
@@ -89,6 +102,8 @@ export function kpiPanel(app: App): HTMLElement {
     }
     cmpTable.style.display = compare ? '' : 'none';
     cmpNote.style.display = compare ? '' : 'none';
+    fbField.style.display = compare ? '' : 'none';
+    if (!compare) cmpWarn.style.display = 'none';
   };
   const box = (title: string, c: HTMLCanvasElement, tall = false) => h('div', { class: `chart-box ${tall ? 'tall' : ''}` }, h('div', { class: 'chart-title' }, title), h('div', { class: 'chart-wrap' }, c));
 
@@ -116,7 +131,7 @@ export function kpiPanel(app: App): HTMLElement {
       box(`Event timeline (per ${TIMELINE_BUCKET_S} s)`, cEvents, true),
       box('Most loaded cells (PRB / TCH utilisation)', cLoad, true),
       box('SINR distribution of camped users (CDF)', cCdf),
-      h('div', { class: 'chart-box tall' }, thrCdfTitle, modeChips, h('div', { class: 'chart-wrap' }, cThrCdf), cmpNote, cmpTable),
+      h('div', { class: 'chart-box tall' }, thrCdfTitle, modeChips, fbField, h('div', { class: 'chart-wrap' }, cThrCdf), cmpWarn, cmpNote, cmpTable),
     ),
     h('div', { class: 'log' }, h('div', { class: 'chart-title' }, 'Event log (newest first, click to locate)'), chips, logList),
   );
@@ -289,13 +304,21 @@ export function kpiPanel(app: App): HTMLElement {
         : 'DL throughput of active data users (CDF): no active data sessions';
     } else {
       const keys = SCHEDULERS.map((x) => x.key);
-      const res = engine.compareSchedulers(keys);
+      const res = engine.compareSchedulers(keys, fullBuffer);
       const liveKey = schedulerInfo(app.store.scenario.settings.radio.scheduler)?.key ?? 'rr';
       thrCdf.data.datasets = [
         ...SCHEDULERS.map((x, i) => ({ label: x.label.replace(/ \(.*\)$/, ''), data: cdfPts(res[x.key].thr), borderColor: SERIES[i], backgroundColor: SERIES[i], borderWidth: x.key === liveKey ? 2.5 : 2, pointRadius: 0, stepped: true as const })),
-        { ...demandSet, data: cdfPts(res.demand) },
+        ...(fullBuffer ? [] : [{ ...demandSet, data: cdfPts(res.demand) }]),
       ];
-      thrCdfTitle.textContent = res.demand.length ? `DL throughput CDF by scheduler · n = ${res.demand.length} LTE/NR data users` : 'DL throughput CDF by scheduler: no active LTE/NR data sessions';
+      const n = res[keys[0]].thr.length;
+      thrCdfTitle.textContent = n ? `DL throughput CDF by scheduler · n = ${n} LTE/NR data users${fullBuffer ? ' · full buffer' : ''}` : 'DL throughput CDF by scheduler: no active LTE/NR data sessions';
+      // All curves identical means no cell is short of resources: say so instead of leaving it a mystery.
+      const sig = (k: string) => res[k].thr.map((v) => v.toFixed(3)).join(',');
+      const identical = n > 0 && keys.every((k) => sig(k) === sig(keys[0]));
+      cmpWarn.style.display = identical ? '' : 'none';
+      cmpWarn.textContent = identical
+        ? 'All schedulers give the same result: no cell is congested, so every user already gets its full demand and there is nothing to share differently. Tick “Full buffer” above, or raise the load (more users, higher data demand).'
+        : '';
       // Comparison table
       clear(cmpTable);
       const rows = SCHEDULERS.map((x, i) => {

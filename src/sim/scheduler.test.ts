@@ -124,4 +124,19 @@ describe('compareSchedulers what-if', () => {
     expect(res.maxmin.fairness).toBeGreaterThan(res.rr.fairness);
     expect(res.maxci.fairness).toBeLessThan(res.rr.fairness);
   }, 60000);
+
+  it('full buffer separates the schedulers even in a lightly loaded network', () => {
+    const scn = defaultScenario(); // demo load: cells are not congested
+    const c = scn.center;
+    const eng = new SimEngine(scn, buildRadioContext(scn), { south: c.lat - 0.005, north: c.lat + 0.005, west: c.lng - 0.007, east: c.lng + 0.007 });
+    eng.reset();
+    for (let i = 0; i < 600; i++) eng.step();
+    const sum = (r: { thr: number[] }) => r.thr.reduce((a, b) => a + b, 0);
+    const fb = eng.compareSchedulers(['rr', 'pf', 'maxci', 'maxmin'], true);
+    expect(fb.rr.thr.length).toBeGreaterThan(5);
+    expect(sum(fb.maxci)).toBeGreaterThan(sum(fb.rr));
+    expect(sum(fb.maxmin)).toBeLessThan(sum(fb.rr));
+    expect(fb.maxmin.fairness).toBeGreaterThan(fb.maxci.fairness);
+    expect(fb.demand).toHaveLength(0);
+  }, 60000);
 });
