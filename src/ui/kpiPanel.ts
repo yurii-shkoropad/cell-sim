@@ -1,5 +1,6 @@
 import { BarController, BarElement, CategoryScale, Chart, Filler, Legend, LinearScale, LineController, LineElement, LogarithmicScale, PointElement, Tooltip, type ChartConfiguration } from 'chart.js';
 import { EVENT_COLOR, EVENT_LABEL, EVENT_TYPES, percentile, TIMELINE_BUCKET_S, type SimEventType } from '../sim/kpi';
+import { SCHEDULERS, schedulerInfo } from '../sim/scheduler';
 import type { App } from './app';
 import { clear, fmt, h } from './dom';
 
@@ -62,6 +63,33 @@ export function kpiPanel(app: App): HTMLElement {
   const cCdf = mk();
   const cThrCdf = mk();
   const thrCdfTitle = h('div', { class: 'chart-title' }, 'DL throughput distribution of active data users (CDF)');
+  // View: live served vs. demand, or a what-if comparison of all schedulers.
+  let compare = false;
+  try {
+    compare = localStorage.getItem('radio-sim.cdf-compare') === '1';
+  } catch {
+    /* ignore */
+  }
+  const cmpTable = h('div', { class: 'cmp-table' });
+  const cmpNote = h('div', { class: 'hint' }, 'What-if on the current snapshot: the same LTE/NR users, positions, SINR and demands, as if every LTE/NR cell used each scheduler (GSM users get a fixed GPRS slot and are left out).');
+  const modeChips = h('div', { class: 'chips' });
+  const renderModeChips = () => {
+    clear(modeChips);
+    for (const [on, label] of [[false, 'Served vs demand'], [true, 'Compare schedulers']] as [boolean, string][]) {
+      modeChips.appendChild(h('button', { type: 'button', class: `chip ${compare === on ? 'on' : ''}`, style: `--c:${on ? SERIES[2] : SERIES[0]}`, onclick: () => {
+        compare = on;
+        try {
+          localStorage.setItem('radio-sim.cdf-compare', on ? '1' : '0');
+        } catch {
+          /* ignore */
+        }
+        renderModeChips();
+        update();
+      } }, label));
+    }
+    cmpTable.style.display = compare ? '' : 'none';
+    cmpNote.style.display = compare ? '' : 'none';
+  };
   const box = (title: string, c: HTMLCanvasElement, tall = false) => h('div', { class: `chart-box ${tall ? 'tall' : ''}` }, h('div', { class: 'chart-title' }, title), h('div', { class: 'chart-wrap' }, c));
 
   const logList = h('div', { class: 'log-list' });
@@ -88,7 +116,7 @@ export function kpiPanel(app: App): HTMLElement {
       box(`Event timeline (per ${TIMELINE_BUCKET_S} s)`, cEvents, true),
       box('Most loaded cells (PRB / TCH utilisation)', cLoad, true),
       box('SINR distribution of camped users (CDF)', cCdf),
-      h('div', { class: 'chart-box tall' }, thrCdfTitle, h('div', { class: 'chart-wrap' }, cThrCdf)),
+      h('div', { class: 'chart-box tall' }, thrCdfTitle, modeChips, h('div', { class: 'chart-wrap' }, cThrCdf), cmpNote, cmpTable),
     ),
     h('div', { class: 'log' }, h('div', { class: 'chart-title' }, 'Event log (newest first, click to locate)'), chips, logList),
   );
@@ -245,21 +273,62 @@ export function kpiPanel(app: App): HTMLElement {
     cdf.data.datasets[0].data = vals.map((v, i) => ({ x: Math.max(-10, Math.min(35, v)), y: ((i + 1) / vals.length) * 100 }));
     cdf.update('none');
 
-    // Throughput CDF (served vs. demanded) of active data users
+    // Throughput CDF of active data users: live served vs. demand, or all schedulers what-if
+    const cdfPts = (xs: number[]) => [...xs].sort((a, b) => a - b).map((v, i, a) => ({ x: Math.max(THR_CDF_MIN, v), y: ((i + 1) / a.length) * 100 }));
     const dataUsers = engine.users.filter((u) => u.session?.kind === 'data');
-    const served = dataUsers.map((u) => u.thrMbps).sort((a, b) => a - b);
-    const demand = dataUsers.map((u) => u.session!.demandMbps).sort((a, b) => a - b);
-    const cdfPts = (xs: number[]) => xs.map((v, i) => ({ x: Math.max(THR_CDF_MIN, v), y: ((i + 1) / xs.length) * 100 }));
-    thrCdf.data.datasets[0].data = cdfPts(served);
-    thrCdf.data.datasets[1].data = cdfPts(demand);
+    const demand = dataUsers.map((u) => u.session!.demandMbps);
+    const demandSet = { label: 'Demand', data: cdfPts(demand), borderColor: '#8a8984', backgroundColor: '#8a8984', borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, stepped: true as const };
+    if (!compare) {
+      const served = dataUsers.map((u) => u.thrMbps).sort((a, b) => a - b);
+      thrCdf.data.datasets = [
+        { label: 'Served', data: cdfPts(served), borderColor: SERIES[0], backgroundColor: SERIES[0], borderWidth: 2, pointRadius: 0, stepped: true },
+        { ...demandSet, borderColor: SERIES[1], backgroundColor: SERIES[1], borderWidth: 2 },
+      ];
+      thrCdfTitle.textContent = served.length
+        ? `DL throughput of active data users (CDF) · n = ${served.length} · 5th pct ${fmtMbps(percentile(served, 0.05))} · median ${fmtMbps(percentile(served, 0.5))}`
+        : 'DL throughput of active data users (CDF): no active data sessions';
+    } else {
+      const keys = SCHEDULERS.map((x) => x.key);
+      const res = engine.compareSchedulers(keys);
+      const liveKey = schedulerInfo(app.store.scenario.settings.radio.scheduler)?.key ?? 'rr';
+      thrCdf.data.datasets = [
+        ...SCHEDULERS.map((x, i) => ({ label: x.label.replace(/ \(.*\)$/, ''), data: cdfPts(res[x.key].thr), borderColor: SERIES[i], backgroundColor: SERIES[i], borderWidth: x.key === liveKey ? 2.5 : 2, pointRadius: 0, stepped: true as const })),
+        { ...demandSet, data: cdfPts(res.demand) },
+      ];
+      thrCdfTitle.textContent = res.demand.length ? `DL throughput CDF by scheduler · n = ${res.demand.length} LTE/NR data users` : 'DL throughput CDF by scheduler: no active LTE/NR data sessions';
+      // Comparison table
+      clear(cmpTable);
+      const rows = SCHEDULERS.map((x, i) => {
+        const t = [...res[x.key].thr].sort((a, b) => a - b);
+        const total = t.reduce((a, b) => a + b, 0);
+        return { x, i, total, mean: t.length ? total / t.length : 0, p5: percentile(t, 0.05), med: percentile(t, 0.5), fair: res[x.key].fairness };
+      });
+      const best = (f: (r: (typeof rows)[number]) => number) => Math.max(...rows.map(f));
+      cmpTable.appendChild(
+        h('table', { class: 'meas cmp' },
+          h('tr', null, ...['Scheduler', 'Total', 'Mean', '5th pct', 'Median', 'Fairness'].map((t) => h('th', null, t))),
+          ...rows.map((r) => h('tr', { class: r.x.key === liveKey ? 'live' : '' },
+            h('td', null, h('span', { class: 'dot', style: `background:${SERIES[r.i]}` }), ' ', r.x.label.replace(/ \(.*\)$/, ''), r.x.key === liveKey ? h('span', { class: 'live-tag' }, ' live') : ''),
+            h('td', { class: r.total === best((q) => q.total) && r.total > 0 ? 'top' : '' }, fmtMbps(r.total)),
+            h('td', { class: r.mean === best((q) => q.mean) && r.mean > 0 ? 'top' : '' }, fmtMbps(r.mean)),
+            h('td', { class: r.p5 === best((q) => q.p5) && r.p5 > 0 ? 'top' : '' }, fmtMbps(r.p5)),
+            h('td', { class: r.med === best((q) => q.med) && r.med > 0 ? 'top' : '' }, fmtMbps(r.med)),
+            h('td', { class: r.fair === best((q) => q.fair) ? 'top' : '' }, fmt(r.fair, 2)),
+          )),
+        ),
+      );
+    }
+
+    // Log axis range from the data (rounded up to the next decade).
+    let maxX = THR_CDF_MIN * 10;
+    for (const d of thrCdf.data.datasets) for (const p of d.data) if (p.x > maxX) maxX = p.x;
+    thrCdf.options.scales!.x!.max = Math.pow(10, Math.ceil(Math.log10(maxX)));
     thrCdf.update('none');
-    thrCdfTitle.textContent = served.length
-      ? `DL throughput of active data users (CDF) · n = ${served.length} · 5th pct ${fmtMbps(percentile(served, 0.05))} · median ${fmtMbps(percentile(served, 0.5))}`
-      : 'DL throughput of active data users (CDF): no active data sessions';
 
     renderLog();
   };
 
+  renderModeChips();
   app.onLiveTick(update);
   update();
   return root;

@@ -97,3 +97,31 @@ describe('schedulers in the simulation', () => {
     expect(mm.sum).toBeLessThan(rr.sum); // ...and costs capacity
   }, 60000);
 });
+
+describe('compareSchedulers what-if', () => {
+  it('matches the live allocation for the scheduler in use and ranks the others as expected', () => {
+    const scn = defaultScenario();
+    scn.fixedUsers = [];
+    scn.settings.users.count = 200;
+    scn.settings.users.staticShare = 1;
+    const c = scn.center;
+    const eng = new SimEngine(scn, buildRadioContext(scn), { south: c.lat - 0.005, north: c.lat + 0.005, west: c.lng - 0.007, east: c.lng + 0.007 });
+    eng.reset();
+    for (const u of eng.users) {
+      u.demandMbps = 60;
+      eng.setTraffic(u, 'data');
+    }
+    for (let i = 0; i < 20; i++) eng.step();
+    const res = eng.compareSchedulers(['rr', 'pf', 'maxci', 'maxmin']);
+    // Live scheduler is Round Robin: the what-if must reproduce it exactly.
+    const live = eng.users.filter((u) => u.session?.kind === 'data' && eng.ctx.cells[u.serving]?.tech !== 'GSM').map((u) => u.thrMbps).sort((a, b) => a - b);
+    expect([...res.rr.thr].sort((a, b) => a - b)).toEqual(live);
+    expect(res.demand).toHaveLength(live.length);
+    const sum = (k: string) => res[k].thr.reduce((a, b) => a + b, 0);
+    expect(sum('pf')).toBeGreaterThan(sum('rr'));
+    expect(sum('maxci')).toBeGreaterThan(sum('pf'));
+    expect(sum('maxmin')).toBeLessThan(sum('rr'));
+    expect(res.maxmin.fairness).toBeGreaterThan(res.rr.fairness);
+    expect(res.maxci.fairness).toBeLessThan(res.rr.fairness);
+  }, 60000);
+});

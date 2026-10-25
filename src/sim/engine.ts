@@ -895,6 +895,94 @@ export class SimEngine {
       .sort((a, b) => b.level - a.level);
   }
 
+  /**
+   * Allocate one LTE/NR cell's RBs among its active users with scheduler `sched`.
+   * Pure: reads the users' current SINR and demand, changes nothing, so it also
+   * serves what-if comparisons on the same snapshot.
+   */
+  private allocateCell(i: number, sched: SchedulerKey, list: SimUser[]) {
+    const r = this.settings.radio;
+    const c = this.ctx.cells[i];
+    const thr = new Float64Array(list.length);
+    const rank = new Int8Array(list.length);
+    let free = c.rbs;
+    let gbr = 0;
+    const data: { k: number; rate: number; need: number }[] = [];
+    const rbMbps = (c.rbBwHz * (1 - r.overhead)) / 1e6;
+    list.forEach((u, k) => {
+      const link = linkRank(c, u.sinr, this.ueRx(u), r);
+      const rate = link.se * rbMbps;
+      rank[k] = rate > 0 ? link.rank : 0;
+      if (rate <= 0) return;
+      if (u.session!.kind === 'voice') {
+        const need = Math.min(VOICE_GBR_MBPS / rate, free);
+        free -= need;
+        gbr += need;
+        thr[k] = need * rate;
+      } else data.push({ k, rate, need: u.session!.demandMbps / rate });
+    });
+    // Channel-aware schedulers (PF, Max C/I) serve users near their fading peaks,
+    // raising the rate during their share (multi-user diversity, grows with users).
+    if ((sched === 'pf' || sched === 'maxci') && data.length > 1) {
+      const g = pfDiversityGainDb(data.length, r.pfDiversityEfficiency);
+      for (const d of data) {
+        const u = list[d.k];
+        const boosted = linkRank(c, u.sinr + g, this.ueRx(u), r);
+        d.rate = boosted.se * rbMbps;
+        rank[d.k] = boosted.rank;
+        d.need = u.session!.demandMbps / d.rate;
+      }
+    }
+    // MU-MIMO: co-scheduled data users reuse the same RBs, so the data pool grows
+    // by the pairing gain (in RB-equivalents); physical RB use is divided back.
+    const mu = muMimoGain(c.maxMu, data.length, r.muMimoEfficiency);
+    const pool = free * mu;
+    const alloc = allocate(sched, data, pool);
+    let remaining = pool;
+    data.forEach((d, j) => {
+      thr[d.k] = alloc[j] * d.rate;
+      remaining -= alloc[j];
+    });
+    return { thr, rank, usedRb: gbr + (pool - remaining) / mu, gbrRb: gbr, mu };
+  }
+
+  /**
+   * What-if on the current snapshot: the DL throughput every active LTE/NR data user
+   * would get if all LTE/NR cells used each scheduler, with demand and per-cell
+   * fairness. Same users, positions, SINR and demands for every scheduler. GSM users
+   * are left out: they get a fixed GPRS timeslot whatever the scheduler.
+   */
+  compareSchedulers(scheds: SchedulerKey[]): Record<string, { thr: number[]; fairness: number }> & { demand: number[] } {
+    const C = this.ctx.cells.length;
+    const perCell: SimUser[][] = Array.from({ length: C }, () => []);
+    const demand: number[] = [];
+    for (const u of this.users) {
+      if (u.serving < 0 || !u.session || this.ctx.cells[u.serving].tech === 'GSM') continue;
+      perCell[u.serving].push(u);
+      if (u.session.kind === 'data') demand.push(u.session.demandMbps);
+    }
+    const out: Record<string, { thr: number[]; fairness: number }> = {};
+    for (const sched of scheds) {
+      const thr: number[] = [];
+      const satByCell = new Map<number, number[]>();
+      for (let i = 0; i < C; i++) {
+        const list = perCell[i];
+        if (!list.length) continue;
+        const a = this.allocateCell(i, sched, list);
+        list.forEach((u, k) => {
+          if (u.session!.kind !== 'data') return;
+          const t = a.thr[k];
+          thr.push(t);
+          const l = satByCell.get(i) ?? [];
+          l.push(Math.min(1, t / Math.max(u.session!.demandMbps, 1e-9)));
+          satByCell.set(i, l);
+        });
+      }
+      out[sched] = { thr, fairness: meanCellFairness(satByCell) };
+    }
+    return Object.assign(out, { demand });
+  }
+
   /** Resource allocation: GBR voice first, then max-min fair water-filling for data. */
   private schedule() {
     const r = this.settings.radio;
@@ -924,51 +1012,14 @@ export class SimEngine {
       }
       const sched = this.cellScheduler(i);
       st.scheduler = sched;
-      let free = c.rbs;
-      let gbr = 0;
-      const data: { u: SimUser; rate: number; need: number }[] = [];
-      const rbMbps = (c.rbBwHz * (1 - r.overhead)) / 1e6;
-      for (const u of list) {
-        const link = linkRank(c, u.sinr, this.ueRx(u), r);
-        const rate = link.se * rbMbps;
-        u.rank = rate > 0 ? link.rank : 0;
-        if (rate <= 0) {
-          u.thrMbps = 0;
-          continue;
-        }
-        if (u.session!.kind === 'voice') {
-          const need = Math.min(VOICE_GBR_MBPS / rate, free);
-          free -= need;
-          gbr += need;
-          u.thrMbps = need * rate;
-        } else {
-          data.push({ u, rate, need: u.session!.demandMbps / rate });
-        }
-      }
-      // Channel-aware schedulers (PF, Max C/I) serve users near their fading peaks,
-      // raising the rate during their share (multi-user diversity, grows with users).
-      if ((sched === 'pf' || sched === 'maxci') && data.length > 1) {
-        const g = pfDiversityGainDb(data.length, r.pfDiversityEfficiency);
-        for (const d of data) {
-          const boosted = linkRank(c, d.u.sinr + g, this.ueRx(d.u), r);
-          d.rate = boosted.se * rbMbps;
-          d.u.rank = boosted.rank;
-          d.need = d.u.session!.demandMbps / d.rate;
-        }
-      }
-      // MU-MIMO: co-scheduled data users reuse the same RBs, so the data pool grows
-      // by the pairing gain (in RB-equivalents); physical RB use is divided back.
-      const mu = muMimoGain(c.maxMu, data.length, r.muMimoEfficiency);
-      const pool = free * mu;
-      const alloc = allocate(sched, data, pool);
-      let remaining = pool;
-      data.forEach((d, k) => {
-        d.u.thrMbps = alloc[k] * d.rate;
-        remaining -= alloc[k];
+      const a = this.allocateCell(i, sched, list);
+      list.forEach((u, k) => {
+        u.thrMbps = a.thr[k];
+        u.rank = a.rank[k];
       });
-      st.muGain = mu;
-      st.usedRb = gbr + (pool - remaining) / mu;
-      st.gbrRb = gbr;
+      st.muGain = a.mu;
+      st.usedRb = a.usedRb;
+      st.gbrRb = a.gbrRb;
       st.load = c.rbs > 0 ? st.usedRb / c.rbs : 0;
       this.loads[i] = r.interferenceLoad === 'full' ? 1 : Math.max(r.minInterfererLoad, st.load);
     }
