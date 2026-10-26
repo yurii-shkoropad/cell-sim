@@ -137,4 +137,39 @@ describe('SimEngine', () => {
     expect(eng.samples.at(-1)!.coverage).toBe(0);
   });
 
+
+  it('per-cell hysteresis reduces handovers; a positive CIO attracts them', () => {
+    // Same seed and users in every run: mobility does not depend on handovers.
+    const base = JSON.stringify(defaultScenario());
+    /** Run 5 min; also return the mean number of active sessions on each cell. */
+    const run = (mutate: (s: ReturnType<typeof defaultScenario>) => void) => {
+      const s = JSON.parse(base) as ReturnType<typeof defaultScenario>;
+      mutate(s);
+      const c = s.center;
+      const eng = new SimEngine(s, buildRadioContext(s), { south: c.lat - 0.01, north: c.lat + 0.01, west: c.lng - 0.015, east: c.lng + 0.015 });
+      eng.reset();
+      const served = new Float64Array(eng.ctx.cells.length);
+      for (let i = 0; i < 1500; i++) {
+        eng.step();
+        eng.cells.forEach((cs, k) => (served[k] += cs.active / 1500));
+      }
+      return Object.assign(eng, { served });
+    };
+    const lteSectors = (s: ReturnType<typeof defaultScenario>) => s.stations.filter((b) => b.tech === 'LTE').flatMap((b) => b.sectors);
+    const ref = run(() => {});
+    const sticky = run((s) => lteSectors(s).forEach((x) => (x.ho = { hysteresisDb: 8 })));
+    expect(sticky.counters.hoSuccess).toBeLessThan(ref.counters.hoSuccess * 0.7);
+
+    // Give one busy LTE cell +10 dB CIO: it must carry more connected traffic
+    // (CIO also applies while it serves, so users join earlier and stay longer).
+    const target = ref.cells.map((c, i) => ({ i, n: c.hoIn })).filter((x) => ref.ctx.cells[x.i].tech === 'LTE').sort((a, b) => b.n - a.n)[0];
+    const tc = ref.ctx.cells[target.i];
+    const lured = run((s) => {
+      const sec = s.stations.find((b) => b.id === tc.bsId)!.sectors.find((x) => x.id === tc.sectorId)!;
+      sec.ho = { cioDb: 10 };
+    });
+    const li = lured.ctx.cells.findIndex((c) => c.sectorId === tc.sectorId);
+    expect(lured.served[li]).toBeGreaterThan(ref.served[target.i] * 1.2);
+    expect(lured.hoParams(li).cioDb).toBe(10);
+  }, 60000);
 });

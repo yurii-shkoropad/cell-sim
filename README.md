@@ -39,7 +39,9 @@ bandwidth, antenna / MIMO type (SISO, 2×2, 4×4, 8T8R, massive MIMO 32T32R / 64
 antenna height, feeder loss, TRX count (GSM), maximum active users, position, and on-air state.
 
 **Per sector:** azimuth, horizontal and vertical beamwidth, tilt, gain, front-to-back ratio, carrier
-frequency (the ARFCN, EARFCN or NR-ARFCN is shown), PCI or BSIC, and on/off.
+frequency (the ARFCN, EARFCN or NR-ARFCN is shown), PCI or BSIC, and on/off. Handover parameters can
+also be set per cell (hysteresis, A3 offset, time to trigger, cell individual offset); blank fields use
+the RAT defaults.
 
 **Operators:** name, PLMN (MCC-MNC, used to match imported data), colour and subscriber share.
 

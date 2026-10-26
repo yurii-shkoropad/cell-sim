@@ -322,3 +322,11 @@ table.cmp tr.live td:first-child { font-weight: 600; }
 .st-dot.none { background: #000; }
 .ul-batch .field { margin: 3px 0; }
 .ul-batch-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+
+/* per-cell handover parameters */
+.ho-head, .ho-row { display: grid; grid-template-columns: 28px repeat(4, 1fr); gap: 4px; align-items: center; }
+.ho-head { color: var(--muted); font-size: 10.5px; }
+.ho-row { margin: 2px 0; }
+.ho-row input { padding: 3px; font-size: 12px; }
+.ho-row input.set { border-color: var(--accent); background: #eef4fc; }
+.ho-custom { color: var(--accent); }

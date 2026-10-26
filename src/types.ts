@@ -34,6 +34,19 @@ export interface Sector {
   /** LTE/NR PCI, or GSM BSIC (0..63). */
   pci: number;
   enabled: boolean;
+  /** Per-cell handover parameters; a missing field uses the global value for the RAT. */
+  ho?: SectorHo;
+}
+
+export interface SectorHo {
+  /** A3 hysteresis for UEs served by this cell, dB. */
+  hysteresisDb?: number;
+  /** A3 offset for UEs served by this cell, dB. */
+  a3OffsetDb?: number;
+  /** Time to trigger for UEs served by this cell, ms. */
+  tttMs?: number;
+  /** Cell individual offset: added to this cell's level when it is a handover candidate (and as serving), dB. */
+  cioDb?: number;
 }
 
 export interface BaseStation {

@@ -63,7 +63,7 @@ const HTML = `
 <h4>7. Mobility management</h4>
 <ul>
 <li><b>Idle</b>: the user camps on the best cell of the highest-priority RAT whose level is at least the minimum. Reselection needs 2 dB of hysteresis, unless it moves to a higher-priority RAT.</li>
-<li><b>A3 handover</b> (same RAT): the neighbour exceeds serving + offset + hysteresis for the whole time to trigger. It fails if the target cannot admit the session (2 s back-off).</li>
+<li><b>A3 handover</b> (same RAT, TS 36.331): <code>M<sub>n</sub> + CIO<sub>n</sub> &gt; M<sub>s</sub> + CIO<sub>s</sub> + Off + Hys</code> for the whole time to trigger. Hysteresis, offset and TTT are those of the <i>serving</i> cell. Each cell can override the RAT defaults, and its cell individual offset (CIO) makes it more (+) or less (−) attractive (station → Configure → Handover parameters). The handover fails if the target cannot admit the session (2 s back-off).</li>
 <li><b>Inter-RAT (B2)</b>: serving drops below the B2 threshold while another RAT is at least min + 3 dB.</li>
 <li><b>Radio link failure</b>: SINR below Q<sub>out</sub> (or level below the minimum) for the T310 time drops the session.</li>
 <li><b>Ping-pong</b>: a handover back to the previous cell within the ping-pong window.</li>

@@ -193,6 +193,11 @@ export class StationInspector {
             h('span', null, `SINR ${sSinr.length ? fmt(sSinr.reduce((a, b) => a + b, 0) / sSinr.length) : '—'} dB`),
             x.st.muGain > 1.001 ? h('span', { title: 'MU-MIMO capacity multiplier' }, `MU ×${fmt(x.st.muGain, 1)}`) : null,
             h('span', { title: 'handovers in / out' }, `HO ${x.st.hoIn}↓ ${x.st.hoOut}↑`),
+            (() => {
+              const hp = this.app.engine.hoParams(x.idx);
+              const custom = !!bs.sectors[x.s].ho;
+              return h('span', { class: custom ? 'ho-custom' : '', title: custom ? 'Per-cell handover parameters (Configure tab)' : 'RAT default handover parameters' }, `hys ${hp.hysteresisDb} · off ${hp.a3OffsetDb} · TTT ${hp.tttMs}${hp.cioDb ? ` · CIO ${hp.cioDb > 0 ? '+' : ''}${hp.cioDb}` : ''}`);
+            })(),
             h('span', { title: 'drops / blocks' }, `✖${x.st.drops} ⛔${x.st.blocks}`),
           ),
         ),

@@ -64,6 +64,11 @@ export interface CellRF {
   scheduler: SchedulerKey | null;
   /** Index into RadioContext.paths, or −1 (Hata). */
   pathMap: number;
+  /** Per-cell handover overrides (null = global value for the RAT) and cell individual offset. */
+  hoHystDb: number | null;
+  hoA3OffsetDb: number | null;
+  hoTttMs: number | null;
+  cioDb: number;
 }
 
 export interface RadioContext {
@@ -157,6 +162,10 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
         })(),
         scheduler: schedulerInfo(bs.scheduler)?.key ?? null,
         pathMap,
+        hoHystDb: s.ho?.hysteresisDb ?? null,
+        hoA3OffsetDb: s.ho?.a3OffsetDb ?? null,
+        hoTttMs: s.ho?.tttMs ?? null,
+        cioDb: s.ho?.cioDb ?? 0,
       });
     });
   }

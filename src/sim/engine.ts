@@ -450,6 +450,13 @@ export class SimEngine {
 
   // ---------------------------------------------------------------- capacity
 
+  /** Handover parameters for UEs served by cell i: the cell's overrides, else the RAT defaults. */
+  hoParams(i: number): { hysteresisDb: number; a3OffsetDb: number; tttMs: number; cioDb: number } {
+    const c = this.ctx.cells[i];
+    const t = this.settings.thresholds[c.tech];
+    return { hysteresisDb: c.hoHystDb ?? t.hysteresisDb, a3OffsetDb: c.hoA3OffsetDb ?? t.a3OffsetDb, tttMs: c.hoTttMs ?? t.tttMs, cioDb: c.cioDb };
+  }
+
   /** Scheduler used by cell i: the station's override, else the global setting. */
   cellScheduler(i: number): SchedulerKey {
     return this.ctx.cells[i].scheduler ?? schedulerInfo(this.settings.radio.scheduler)?.key ?? 'rr';
@@ -644,12 +651,24 @@ export class SimEngine {
         u.rlfTimerMs = 0;
       }
 
-      // A3: neighbour (same RAT) better than serving + offset + hysteresis for TTT
+      // A3 (3GPP TS 36.331): Mn + CIOn > Ms + CIOs + Off + Hys for TTT, with the
+      // serving cell's offset / hysteresis / TTT and each cell's individual offset.
+      const hp = this.hoParams(u.serving);
       let cand = -1;
       let irat = false;
-      const b = best[sc.tech];
-      if (b >= 0 && b !== u.serving && lvl[sc.tech] > servLvl + tth.a3OffsetDb + tth.hysteresisDb) {
-        cand = b;
+      let bestN = -1;
+      let bestScore = -Infinity;
+      for (const i of this.candidateCells(u)) {
+        const nc = this.ctx.cells[i];
+        if (i === u.serving || nc.tech !== sc.tech) continue;
+        const score = this.level(i, u.x, u.y) + nc.cioDb;
+        if (score > bestScore) {
+          bestScore = score;
+          bestN = i;
+        }
+      }
+      if (bestN >= 0 && bestScore > servLvl + sc.cioDb + hp.a3OffsetDb + hp.hysteresisDb) {
+        cand = bestN;
       } else if (servLvl < tth.b2ServingDbm) {
         // B2: serving weak, other RAT good enough
         const other = this.selectCell(best, lvl, sc.tech);
@@ -664,7 +683,7 @@ export class SimEngine {
           u.hoCand = cand;
           u.hoTimerMs = Math.min(u.hoTimerMs, 0) + dtMs; // keep back-off if any
         }
-        if (u.hoTimerMs >= tth.tttMs) this.tryHandover(u, cand, irat);
+        if (u.hoTimerMs >= hp.tttMs) this.tryHandover(u, cand, irat);
       } else {
         u.hoCand = -1;
         u.hoTimerMs = Math.min(u.hoTimerMs + dtMs, 0);

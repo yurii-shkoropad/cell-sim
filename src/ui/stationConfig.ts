@@ -220,6 +220,8 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
         structural();
       }),
     ),
+    h('h4', null, 'Handover parameters (per cell)'),
+    hoTable(app, bs, changed),
     h('h4', null, 'Vertical beam (side view)'),
     profileHost,
     h('div', { class: 'row' },
@@ -236,6 +238,43 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
     ),
   );
   renderProfile();
+}
+
+/**
+ * Per-sector A3 parameters. Empty = the global value for the RAT (Radio → thresholds),
+ * shown as the placeholder.
+ */
+function hoTable(app: App, bs: BaseStation, changed: () => void): HTMLElement {
+  const th = app.store.scenario.settings.thresholds[bs.tech];
+  const cols: { key: 'hysteresisDb' | 'a3OffsetDb' | 'tttMs' | 'cioDb'; label: string; def: number; step: number; min: number; max: number; title: string }[] = [
+    { key: 'hysteresisDb', label: 'Hyst dB', def: th.hysteresisDb, step: 0.5, min: 0, max: 15, title: 'Hysteresis: how much stronger a neighbour must be before UEs leave this cell' },
+    { key: 'a3OffsetDb', label: 'A3 off dB', def: th.a3OffsetDb, step: 0.5, min: -15, max: 15, title: 'A3 offset: extra margin on top of the hysteresis' },
+    { key: 'tttMs', label: 'TTT ms', def: th.tttMs, step: 40, min: 0, max: 5120, title: 'Time to trigger: how long the condition must hold' },
+    { key: 'cioDb', label: 'CIO dB', def: 0, step: 0.5, min: -24, max: 24, title: 'Cell individual offset: + makes this cell more attractive as a handover target, − less' },
+  ];
+  return h('div', { class: 'ho-grid' },
+    h('div', { class: 'ho-head' }, h('span', null, ''), ...cols.map((c) => h('span', { title: c.title }, c.label))),
+    ...bs.sectors.map((s, i) =>
+      h('div', { class: 'ho-row' },
+        h('span', null, `S${i + 1}`),
+        ...cols.map((c) => {
+          const cur = s.ho?.[c.key];
+          const input = h('input', { type: 'number', step: String(c.step), placeholder: String(c.def), value: cur === undefined ? '' : String(cur), title: `${c.title} (empty = default ${c.def})`, onchange: () => {
+            const v = parseFloat(input.value);
+            s.ho ??= {};
+            if (input.value.trim() === '' || !Number.isFinite(v)) delete s.ho[c.key];
+            else s.ho[c.key] = Math.min(c.max, Math.max(c.min, v));
+            if (!Object.keys(s.ho).length) delete s.ho;
+            input.classList.toggle('set', s.ho?.[c.key] !== undefined);
+            changed();
+          } });
+          if (cur !== undefined) input.classList.add('set');
+          return input;
+        }),
+      ),
+    ),
+    h('div', { class: 'hint' }, `Handover when neighbour + its CIO > this cell + its CIO + A3 offset + hysteresis, for the TTT. Empty = ${bs.tech} default (Radio tab).`),
+  );
 }
 
 function sectorRow(bs: BaseStation, s: Sector, i: number, changed: () => void, structural: () => void): HTMLElement {
