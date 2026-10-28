@@ -172,4 +172,30 @@ describe('SimEngine', () => {
     expect(lured.served[li]).toBeGreaterThan(ref.served[target.i] * 1.2);
     expect(lured.hoParams(li).cioDb).toBe(10);
   }, 60000);
+
+  it('records per-cell history with served throughput, demand and capacity', () => {
+    const eng = makeEngine((s) => withUsers(s, 250));
+    for (const u of eng.users) {
+      u.demandMbps = 50;
+      eng.setTraffic(u, 'data');
+    }
+    for (let i = 0; i < 300; i++) eng.step(); // 60 s
+    expect(eng.cellHistory.size).toBe(eng.ctx.cells.length);
+    for (const [i, c] of eng.ctx.cells.entries()) {
+      const h = eng.cellHistory.get(c.sectorId)!;
+      expect(h.length).toBeGreaterThanOrEqual(59);
+      const last = h[h.length - 1];
+      expect(last.camped).toBe(eng.cells[i].camped);
+      if (c.tech !== 'GSM') {
+        expect(last.capacityMbps).toBeGreaterThan(0);
+        // Served can't exceed capacity by more than rounding (capacity uses the mean rate per RB).
+        if (last.load > 0.99) expect(last.servedMbps / last.capacityMbps).toBeGreaterThan(0.5);
+      }
+      expect(last.servedMbps).toBeLessThanOrEqual(last.demandMbps + 1e-6);
+    }
+    const net = eng.samples.at(-1)!;
+    expect(net.servedMbps).toBeCloseTo(eng.cells.reduce((a, c) => a + c.servedMbps, 0), 6);
+    expect(net.prbUtil).toBeGreaterThan(0);
+    expect(net.prbUtil).toBeLessThanOrEqual(1 + 1e-9);
+  }, 30000);
 });

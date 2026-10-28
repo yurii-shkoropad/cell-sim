@@ -85,8 +85,11 @@ Only one inspector is open at a time.
   (coloured by state), user-to-cell links and the road graph.
 - **KPI tiles:** coverage, handover success, ping-pong, drop rate, block rate, mean and cell-edge
   throughput, mean SINR, and fairness (Jain's index).
-- **Charts:** active sessions, users by serving RAT, throughput, mean SINR, an event timeline
-  (10 s buckets), the most loaded cells and the SINR CDF.
+- **Charts:** active sessions, users by serving RAT, throughput, mean SINR, throughput vs capacity
+  (served, demanded, estimated capacity), utilisation (PRB/TCH and served ÷ capacity), an event
+  timeline (10 s buckets), cell load, the SINR CDF, and the throughput CDF with a scheduler comparison.
+- **KPI scope:** the KPI panel shows the whole network or, when a station is selected, that **site**
+  or one of its **sectors**. Per-cell history is kept for the last 15 minutes.
 - **Event log:** handovers (intra and inter-RAT), handover failures, ping-pongs, drops, blocks and
   session start/end. Each event can be filtered, and clicking one locates it on the map.
 - **Planning check:** PCI collision, confusion and mod-3 conflicts; GSM co-channel and

@@ -330,3 +330,7 @@ table.cmp tr.live td:first-child { font-weight: 600; }
 .ho-row input { padding: 3px; font-size: 12px; }
 .ho-row input.set { border-color: var(--accent); background: #eef4fc; }
 .ho-custom { color: var(--accent); }
+
+/* KPI scope selector */
+.scope-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; }
+.scope-lbl { font-size: 11px; color: var(--muted); margin-right: 2px; }

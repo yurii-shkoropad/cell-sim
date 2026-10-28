@@ -3,7 +3,7 @@ import { GSM_SLOT_MBPS, linkRank, ratePerRbMbps, rxLevel, sinrDb, type RadioCont
 import { muMimoGain } from '../radio/mimo';
 import { allocate, jainIndex, pfDiversityGainDb, schedulerInfo, type SchedulerKey } from './scheduler';
 import type { Mobility, Scenario, Settings, Tech, TrafficMode, UserSpec } from '../types';
-import { EventLog, emptyCounters, percentile, type KpiCounters, type KpiSample, type SimEventType } from './kpi';
+import { CELL_HISTORY_S, EventLog, emptyCounters, percentile, type CellSample, type KpiCounters, type KpiSample, type SimEventType } from './kpi';
 import { route, type Bounds, type RoadGraph, type TravelMode } from './roads';
 
 const TECH_BIT: Record<Tech, number> = { GSM: 1, LTE: 2, NR: 4 };
@@ -91,6 +91,18 @@ export interface CellState {
   hoOut: number;
   drops: number;
   blocks: number;
+  /** DL throughput delivered to the cell's users now, Mbps. */
+  servedMbps: number;
+  /** What the cell's active users ask for (data demand + voice GBR), Mbps. */
+  demandMbps: number;
+  /**
+   * Estimated cell capacity now: every RB (× MU-MIMO gain) at the mean rate per RB
+   * of the cell's current users; with no users, at a typical 10 dB / 2Rx link. GSM:
+   * all traffic channels as GPRS slots.
+   */
+  capacityMbps: number;
+  /** Sessions admitted on this cell (new sessions, not handovers). */
+  started: number;
 }
 
 /**
@@ -137,6 +149,8 @@ export class SimEngine {
   t = 0;
   counters: KpiCounters = emptyCounters();
   samples: KpiSample[] = [];
+  /** Per-cell history, keyed by sector id (stable across network edits). */
+  cellHistory = new Map<string, CellSample[]>();
   log = new EventLog(5000);
   private rng = mulberry32(1);
   private levels = new Float64Array(0);
@@ -172,7 +186,7 @@ export class SimEngine {
     const prevLoads = this.loads;
     const prevCells = this.cells;
     const keyToNew = new Map(ctx.cells.map((_, i) => [cellKey(ctx, i), i]));
-    this.cells = ctx.cells.map(() => ({ active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0 }));
+    this.cells = ctx.cells.map(() => ({ active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0, servedMbps: 0, demandMbps: 0, capacityMbps: 0, started: 0 }));
     this.loads = new Float32Array(C).fill(this.initialLoad());
     if (old) {
       old.cells.forEach((_, i) => {
@@ -180,7 +194,7 @@ export class SimEngine {
         if (ni === undefined) return;
         if (prevLoads[i] !== undefined) this.loads[ni] = prevLoads[i];
         const pc = prevCells[i];
-        if (pc) Object.assign(this.cells[ni], { hoIn: pc.hoIn, hoOut: pc.hoOut, drops: pc.drops, blocks: pc.blocks });
+        if (pc) Object.assign(this.cells[ni], { hoIn: pc.hoIn, hoOut: pc.hoOut, drops: pc.drops, blocks: pc.blocks, started: pc.started });
       });
     }
     for (const u of this.users) {
@@ -206,10 +220,11 @@ export class SimEngine {
     this.t = 0;
     this.counters = emptyCounters();
     this.samples = [];
+    this.cellHistory.clear();
     this.log.clear();
     this.nextSampleT = 0;
     this.rng = mulberry32(this.settings.sim.seed);
-    for (const c of this.cells) Object.assign(c, { active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0 });
+    for (const c of this.cells) Object.assign(c, { active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0, servedMbps: 0, demandMbps: 0, capacityMbps: 0, started: 0 });
     this.loads.fill(this.initialLoad());
     this.spawnUsers();
   }
@@ -693,7 +708,9 @@ export class SimEngine {
     this.schedule();
     if (this.t >= this.nextSampleT) {
       this.sample();
-      this.nextSampleT = this.t + 1;
+      // Fixed 1 s cadence (t + 1 would drift with the step size).
+      this.nextSampleT += 1;
+      if (this.nextSampleT <= this.t) this.nextSampleT = this.t + 1;
     }
   }
 
@@ -737,6 +754,7 @@ export class SimEngine {
     u.session = { kind, start: this.t, end: this.t + Math.max(dur, 2), demandMbps: demand };
     u.rlfTimerMs = 0;
     this.attach(u.serving);
+    this.cells[u.serving].started++;
     this.emit('CALL_START', u, kind === 'voice' ? 'voice call' : `data, demand ${demand.toFixed(2)} Mbps`, u.serving);
   }
 
@@ -924,6 +942,7 @@ export class SimEngine {
     let free = c.rbs;
     let gbr = 0;
     const data: { k: number; rate: number; need: number }[] = [];
+    const voiceRates: number[] = [];
     const rbMbps = (c.rbBwHz * (1 - r.overhead)) / 1e6;
     list.forEach((u, k) => {
       const link = linkRank(c, u.sinr, this.ueRx(u), r);
@@ -935,6 +954,7 @@ export class SimEngine {
         free -= need;
         gbr += need;
         thr[k] = need * rate;
+        voiceRates.push(rate);
       } else data.push({ k, rate, need: (demandOverrideMbps ?? u.session!.demandMbps) / rate });
     });
     // Channel-aware schedulers (PF, Max C/I) serve users near their fading peaks,
@@ -959,7 +979,18 @@ export class SimEngine {
       thr[d.k] = alloc[j] * d.rate;
       remaining -= alloc[j];
     });
-    return { thr, rank, usedRb: gbr + (pool - remaining) / mu, gbrRb: gbr, mu };
+    // Mean rate per RB over the users that can be served (after the PF/Max C/I boost).
+    let rateSum = 0;
+    let rateN = 0;
+    for (const d of data) {
+      rateSum += d.rate;
+      rateN++;
+    }
+    for (const r0 of voiceRates) {
+      rateSum += r0;
+      rateN++;
+    }
+    return { thr, rank, usedRb: gbr + (pool - remaining) / mu, gbrRb: gbr, mu, meanRate: rateN ? rateSum / rateN : 0 };
   }
 
   /**
@@ -972,12 +1003,12 @@ export class SimEngine {
    * comparison). Otherwise uncongested cells serve every demand in full and all
    * schedulers coincide. Fairness is then Jain over throughput instead of satisfaction.
    */
-  compareSchedulers(scheds: SchedulerKey[], fullBuffer = false): Record<string, { thr: number[]; fairness: number }> & { demand: number[] } {
+  compareSchedulers(scheds: SchedulerKey[], fullBuffer = false, cells?: Set<number>): Record<string, { thr: number[]; fairness: number }> & { demand: number[] } {
     const C = this.ctx.cells.length;
     const perCell: SimUser[][] = Array.from({ length: C }, () => []);
     const demand: number[] = [];
     for (const u of this.users) {
-      if (u.serving < 0 || !u.session || this.ctx.cells[u.serving].tech === 'GSM') continue;
+      if (u.serving < 0 || !u.session || this.ctx.cells[u.serving].tech === 'GSM' || (cells && !cells.has(u.serving))) continue;
       perCell[u.serving].push(u);
       if (u.session.kind === 'data') demand.push(u.session.demandMbps);
     }
@@ -1026,6 +1057,9 @@ export class SimEngine {
         st.load = c.tch > 0 ? Math.min(1, list.length / c.tch) : 0;
         st.usedRb = 0;
         st.gbrRb = 0;
+        st.servedMbps = list.reduce((a, u) => a + u.thrMbps, 0);
+        st.demandMbps = list.reduce((a, u) => a + (u.session!.kind === 'data' ? u.session!.demandMbps : 0), 0);
+        st.capacityMbps = c.tch * GSM_SLOT_MBPS;
         // BCCH carrier always radiates at full power.
         this.loads[i] = 1;
         continue;
@@ -1041,7 +1075,56 @@ export class SimEngine {
       st.usedRb = a.usedRb;
       st.gbrRb = a.gbrRb;
       st.load = c.rbs > 0 ? st.usedRb / c.rbs : 0;
+      st.servedMbps = a.thr.reduce((x, y) => x + y, 0);
+      st.demandMbps = list.reduce((x, u) => x + (u.session!.kind === 'data' ? u.session!.demandMbps : VOICE_GBR_MBPS), 0);
+      const rate = a.meanRate > 0 ? a.meanRate : ratePerRbMbps(c, 10, r, 2);
+      st.capacityMbps = c.rbs * rate * a.mu;
       this.loads[i] = r.interferenceLoad === 'full' ? 1 : Math.max(r.minInterfererLoad, st.load);
+    }
+  }
+
+  /** Append one CellSample per cell to its history. */
+  private sampleCells() {
+    const C = this.ctx.cells.length;
+    const sinrSum = new Float64Array(C);
+    const sinrN = new Uint32Array(C);
+    const voice = new Uint32Array(C);
+    const data = new Uint32Array(C);
+    const thr: number[][] = Array.from({ length: C }, () => []);
+    for (const u of this.users) {
+      const i = u.serving;
+      if (i < 0) continue;
+      if (Number.isFinite(u.sinr)) {
+        sinrSum[i] += u.sinr;
+        sinrN[i]++;
+      }
+      if (u.session?.kind === 'voice') voice[i]++;
+      else if (u.session?.kind === 'data') {
+        data[i]++;
+        thr[i].push(u.thrMbps);
+      }
+    }
+    for (let i = 0; i < C; i++) {
+      const c = this.ctx.cells[i];
+      const st = this.cells[i];
+      const t = thr[i].sort((a, b) => a - b);
+      let h = this.cellHistory.get(c.sectorId);
+      if (!h) this.cellHistory.set(c.sectorId, (h = []));
+      h.push({
+        t: this.t,
+        voice: voice[i],
+        data: data[i],
+        camped: st.camped,
+        servedMbps: st.servedMbps,
+        demandMbps: st.demandMbps,
+        capacityMbps: st.capacityMbps,
+        load: st.load,
+        resources: c.tech === 'GSM' ? c.tch : c.rbs,
+        meanSinrDb: sinrN[i] ? sinrSum[i] / sinrN[i] : NaN,
+        meanThrMbps: t.length ? t.reduce((a, b) => a + b, 0) / t.length : 0,
+        p5ThrMbps: percentile(t, 0.05),
+      });
+      if (h.length > CELL_HISTORY_S) h.shift();
     }
   }
 
@@ -1075,6 +1158,21 @@ export class SimEngine {
       }
     }
     thr.sort((a, b) => a - b);
+    let served = 0;
+    let demand = 0;
+    let capacity = 0;
+    let usedRb = 0;
+    let rbs = 0;
+    this.cells.forEach((st, i) => {
+      served += st.servedMbps;
+      demand += st.demandMbps;
+      capacity += st.capacityMbps;
+      if (this.ctx.cells[i].tech !== 'GSM') {
+        usedRb += st.usedRb;
+        rbs += this.ctx.cells[i].rbs;
+      }
+    });
+    this.sampleCells();
     this.samples.push({
       t: this.t,
       activeVoice: voice,
@@ -1085,6 +1183,10 @@ export class SimEngine {
       meanSinrDb: sinrN ? sinrSum / sinrN : 0,
       fairness: meanCellFairness(satByCell),
       byTech,
+      servedMbps: served,
+      demandMbps: demand,
+      capacityMbps: capacity,
+      prbUtil: rbs ? usedRb / rbs : 0,
     });
     if (this.samples.length > 3600) this.samples.shift();
   }

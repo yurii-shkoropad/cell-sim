@@ -62,7 +62,34 @@ export interface KpiSample {
   /** Mean per-cell Jain's index over data users' satisfaction (throughput / demand). */
   fairness: number;
   byTech: { GSM: number; LTE: number; NR: number };
+  /** Sums over all cells, Mbps. */
+  servedMbps: number;
+  demandMbps: number;
+  capacityMbps: number;
+  /** RB-weighted PRB utilisation of LTE/NR cells, 0..1. */
+  prbUtil: number;
 }
+
+/** One second of one cell's statistics (kept per sector id). */
+export interface CellSample {
+  t: number;
+  voice: number;
+  data: number;
+  camped: number;
+  servedMbps: number;
+  demandMbps: number;
+  capacityMbps: number;
+  /** PRB (TCH for GSM) utilisation, 0..1. */
+  load: number;
+  /** RBs (TCH for GSM) of the cell, to weight utilisation when combining sectors. */
+  resources: number;
+  meanSinrDb: number;
+  meanThrMbps: number;
+  p5ThrMbps: number;
+}
+
+/** Seconds of per-cell history kept. */
+export const CELL_HISTORY_S = 900;
 
 export const TIMELINE_BUCKET_S = 10;
 
