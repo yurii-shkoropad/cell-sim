@@ -140,7 +140,18 @@ describe('SimEngine', () => {
 
   it('per-cell hysteresis reduces handovers; a positive CIO attracts them', () => {
     // Same seed and users in every run: mobility does not depend on handovers.
-    const base = JSON.stringify(defaultScenario());
+    // Cellular only: Wi-Fi off (offload would move traffic off the cells being compared), and
+    // without the static users the demo adds around the Wi-Fi APs (probe + 150 moving/static users).
+    const scn0 = defaultScenario();
+    scn0.settings.wifi.enabled = false;
+    scn0.users = scn0.users!.slice(0, 151);
+    // Fixed ids: site ids seed the shadowing, so random ids would give a different radio map per run.
+    scn0.stations.forEach((bs, i) => {
+      bs.id = `bs${i}`;
+      bs.sectors.forEach((x, j) => (x.id = `bs${i}s${j}`));
+    });
+    scn0.users.forEach((u, i) => (u.id = `u${i}`));
+    const base = JSON.stringify(scn0);
     /** Run 5 min; also return the mean number of active sessions on each cell. */
     const run = (mutate: (s: ReturnType<typeof defaultScenario>) => void) => {
       const s = JSON.parse(base) as ReturnType<typeof defaultScenario>;

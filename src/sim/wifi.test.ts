@@ -5,7 +5,17 @@ import { defaultScenario } from '../state/defaults';
 import { SimEngine } from './engine';
 
 type Scn = ReturnType<typeof defaultScenario>;
-const base = JSON.stringify(defaultScenario());
+/** Demo scenario with fixed ids (site ids seed the shadowing, user ids the Wi-Fi on/off draw). */
+function stableScenario(): Scn {
+  const s = defaultScenario();
+  s.stations.forEach((bs, i) => {
+    bs.id = `bs${i}`;
+    bs.sectors.forEach((x, j) => (x.id = `bs${i}s${j}`));
+  });
+  s.users!.forEach((u, i) => (u.id = i === 0 ? u.id : `u${i}`));
+  return s;
+}
+const base = JSON.stringify(stableScenario());
 
 function run(mutate: (s: Scn) => void = () => {}, steps = 1500) {
   const s = JSON.parse(base) as Scn;
