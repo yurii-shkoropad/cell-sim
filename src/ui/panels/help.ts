@@ -72,12 +72,24 @@ const HTML = `
 <h4>8. Traffic & mobility</h4>
 <p>Each user has Poisson session arrivals (voice and data rates per hour) with exponentially distributed durations and data demand. Pedestrians use walkable OSM ways and vehicles use drivable ways, with one-way streets respected. Trips go to random destinations by A* shortest path, with random dwell times between them. Operators are assigned by market share, and device RAT support by the capability shares.</p>
 
+<h4>9. Wi-Fi offloading</h4>
+<ul>
+<li><b>Path loss</b> (log-distance, ITU-R P.1238 style): <code>L = 20·log₁₀ f<sub>MHz</sub> − 27.55 + 10·n·log₁₀ d<sub>m</sub></code>, i.e. free space at 1 m plus slope n (indoor ≈ 3.0, outdoor street level ≈ 2.8), with its own correlated shadowing (σ, 20 m). RSSI = EIRP − L − X<sub>σ</sub>. The dashed circle around an AP is where the median RSSI equals the minimum RSSI.</li>
+<li><b>SINR</b> over the AP's channel: co-channel APs whose channels overlap (bonded 40/80/160 MHz channels extend upwards from the primary) interfere, weighted by their airtime in use (at least 5% for beacons). Wi-Fi and cellular bands do not overlap.</li>
+<li><b>Rate</b> with the whole airtime: <code>r · min(α·log₂(1+SINR/r), SE<sub>max</sub>) · B · η<sub>MAC</sub></code>, with the stream count r ≤ min(AP, phone streams) chosen to maximise it. SE<sub>max</sub> per stream is the top MCS: 802.11n 3.61, ac 4.33, ax 7.17 b/s/Hz. η<sub>MAC</sub> ≈ 0.65 covers CSMA/CA, ACKs and headers. Below −2 dB the link is unusable.</li>
+<li><b>Airtime sharing</b>: VoWiFi calls (if enabled) take their 30 kbit/s first. Data then gets equal throughput (802.11 DCF gives every station the same transmit opportunities, so a slow, far station takes more airtime and slows everyone down: the "performance anomaly"), each capped by its demand. The AP total is capped by its backhaul.</li>
+<li><b>Association</b>: a phone with Wi-Fi on measures every AP it may use (public, or its operator's, and not full). It joins the strongest one when RSSI ≥ min + hysteresis, it moves slower than the max speed, and the policy allows, for the whole association delay. It roams to another AP that is stronger by the hysteresis, and leaves below the min RSSI or when too fast.</li>
+<li><b>Policies</b> (they only gate joining, so a user doesn't flip back because its own traffic left the cell): <i>always prefer Wi-Fi</i>; <i>only when Wi-Fi is faster</i> (AP rate ÷ (active users + 1), capped by backhaul, vs. the current cellular throughput × margin); <i>only when the cell is loaded</i> (serving cell PRB load ≥ threshold). A phone with no cellular service always joins.</li>
+<li><b>Sessions</b>: a data session (and voice with VoWiFi) of an associated phone runs over the AP and uses no cellular resources; the phone stays camped on its cell. Joining moves an ongoing cellular session to Wi-Fi. Leaving moves it back through cellular admission control, or drops it if the cell can't take it.</li>
+</ul>
+
 <h4>KPI definitions</h4>
 <ul>
 <li>Drop rate = drops / admitted sessions</li>
 <li>Block rate = blocked / attempted sessions (coverage and capacity reasons)</li>
 <li>HO success = successful / attempted handovers</li>
 <li>Coverage = users with a serving cell / all users</li>
+<li>Wi-Fi offload = Wi-Fi throughput / (Wi-Fi + cellular served throughput)</li>
 <li>Cell-edge throughput = 5th percentile of active data users</li>
 <li>Fairness = Jain's index <code>(Σx)² / (n·Σx²)</code> over data users' satisfaction x = throughput / demand, computed per cell and averaged over cells with ≥ 2 data users (1 = all equally served). It is per cell because a scheduler only shares its own cell's resources.</li>
 </ul>

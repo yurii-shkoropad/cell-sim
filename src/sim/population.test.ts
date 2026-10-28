@@ -7,8 +7,8 @@ describe('population generator', () => {
   const scn = defaultScenario();
   const tpl = templateFromSettings(scn);
 
-  it('the demo has 150 generated users plus the probe, and is the same every time', () => {
-    expect(scn.users).toHaveLength(151);
+  it('the demo has 150 generated users, 40 near the Wi-Fi APs and the probe, and is the same every time', () => {
+    expect(scn.users).toHaveLength(191);
     const again = defaultScenario();
     expect(again.users!.map((u) => [u.lat, u.lng, u.mobility])).toEqual(scn.users!.map((u) => [u.lat, u.lng, u.mobility]));
   });
@@ -29,7 +29,7 @@ describe('population generator', () => {
 
   it('continues UE numbering after the existing users', () => {
     const list = generateUsers(scn, { ...tpl, count: 2 }, areaAround(scn.center.lat, scn.center.lng), mulberry32(4));
-    expect(list.map((u) => u.name)).toEqual(['UE-151', 'UE-152']);
+    expect(list.map((u) => u.name)).toEqual(['UE-191', 'UE-192']);
   });
 
   it('migrates older scenarios: generated users from the settings plus the fixed ones', () => {

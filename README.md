@@ -62,6 +62,15 @@ receive antennas), mobility (static, pedestrian or vehicle), traffic and demand.
 - **Add users** from a template, either as a batch in the current view, in a rectangle or circle
   picked on the map, or one at a time by clicking.
 
+**Wi-Fi offloading:** the **Wi-Fi** tab places access points on the map (one by one, or scattered in the
+view) from a template: band (2.4/5/6 GHz), channel and width (new APs take the next non-overlapping
+channel), standard (802.11n/ac/ax), spatial streams, EIRP, indoor/outdoor, max users, backhaul, and
+access (public, or one operator's subscribers only). Click an AP for its inspector: associated users,
+airtime, served traffic, capacity, events, and every setting. The tab also sets the offload policy
+(always prefer Wi-Fi, only when Wi-Fi is faster, only when the cell is loaded), min RSSI, hysteresis,
+association delay, max speed, voice over Wi-Fi, the share of phones with Wi-Fi on, and the Wi-Fi
+propagation/PHY parameters. Each user can turn Wi-Fi on or off (user inspector or batch edit).
+
 **Reset** restarts the simulation with the same users. Global settings cover the speed ranges,
 default antennas, and the Poisson traffic rates for users with random traffic.
 
@@ -80,6 +89,9 @@ Only one inspector is open at a time.
 
 ## Outputs
 
+- **Wi-Fi:** AP markers with dashed association-range circles, users carried over Wi-Fi drawn in purple,
+  links to their AP, Wi-Fi offload share and Wi-Fi user tiles, a cellular vs Wi-Fi traffic chart, and Wi-Fi
+  join/leave events.
 - **Map layers:** signal level (RSRP or RxLev), best server, SINR, peak DL throughput, and modulation reached. Each can
   be filtered by operator and RAT, with a hover readout. Further overlays show sectors, users
   (coloured by state), user-to-cell links and the road graph.
@@ -113,6 +125,7 @@ The **Models** tab in the app has the full formulas. In short:
 | Scheduler | GBR voice first, then a selectable data scheduler: Round Robin, Proportional Fair (analytical multi-user diversity gain), Max C/I, or equal throughput (max-min); global with per-station override. GSM uses TCH timeslots (8·TRX − 2) |
 | Mobility | Idle selection by RAT priority; A3 intra-RAT and B2 inter-RAT handover with TTT; RLF via Qout + T310 |
 | Traffic | Poisson arrivals, exponential durations and demand |
+| Wi-Fi | Log-distance path loss (P.1238 style) with its own shadowing; co-channel SINR weighted by AP airtime; truncated Shannon per stream capped at the 802.11n/ac/ax top MCS, × MAC efficiency; equal-throughput airtime sharing capped by backhaul; association with min RSSI, hysteresis, delay and a speed limit; three offload policies |
 | Movement | A* routes on the OSM walk and drive graphs (one-way aware), with random destinations and dwell |
 
 ### Known limitations

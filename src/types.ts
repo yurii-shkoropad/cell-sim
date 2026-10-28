@@ -119,6 +119,8 @@ export interface UserSpec {
   ueRx?: number | null;
   /** Fixed speed, km/h; null/missing = random within the Users settings range. */
   speedKmh?: number | null;
+  /** Phone has Wi-Fi on; missing = decided by the Wi-Fi device share (stable per user). */
+  wifi?: boolean | null;
 }
 
 /**
@@ -191,11 +193,74 @@ export interface SimSettings {
   seed: number;
 }
 
+export type WifiBand = '2.4' | '5' | '6';
+export type WifiStandard = 'n' | 'ac' | 'ax';
+/** When users move data from cellular to Wi-Fi. */
+export type OffloadPolicy = 'prefer-wifi' | 'better-throughput' | 'cell-load';
+
+/** A Wi-Fi access point. */
+export interface WifiAp {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  band: WifiBand;
+  /** Primary 20 MHz channel number. */
+  channel: number;
+  widthMHz: number;
+  standard: WifiStandard;
+  /** Spatial streams (MIMO). */
+  streams: number;
+  /** EIRP, dBm. */
+  txPowerDbm: number;
+  /** Indoor (in a building) or outdoor (street level): sets the path-loss slope. */
+  indoor: boolean;
+  maxUsers: number;
+  /** Backhaul (internet uplink of the AP), Mbps: caps the AP's total throughput. */
+  backhaulMbps: number;
+  /** 'public' or an operator id (only that operator's subscribers may associate). */
+  access: string;
+  enabled: boolean;
+}
+
+export interface WifiSettings {
+  /** Master switch for Wi-Fi offloading. */
+  enabled: boolean;
+  /** Share of phones with Wi-Fi switched on (users can override individually). */
+  deviceShare: number;
+  /** Minimum RSSI to associate / stay associated, dBm. */
+  minRssiDbm: number;
+  /** Margin: join at min + hysteresis, leave below min, switch AP when better by this. */
+  hysteresisDb: number;
+  /** How long the join condition must hold before associating, ms. */
+  assocDelayMs: number;
+  policy: OffloadPolicy;
+  /** 'cell-load' policy: offload when the serving cell's PRB load exceeds this (0..1). */
+  loadThreshold: number;
+  /** 'better-throughput' policy: Wi-Fi must beat cellular by this factor (e.g. 1.2 = 20%). */
+  throughputMargin: number;
+  /** Users moving faster than this stay on cellular, km/h. */
+  maxSpeedKmh: number;
+  /** Voice calls may be carried over Wi-Fi (VoWiFi). */
+  voiceOverWifi: boolean;
+  /** Share of the PHY rate left after CSMA/CA, ACKs and headers. */
+  macEfficiency: number;
+  /** Shannon attenuation for Wi-Fi links. */
+  alpha: number;
+  /** Phone spatial streams for Wi-Fi. */
+  ueStreams: number;
+  /** Path-loss slopes (log-distance exponent) for indoor and outdoor APs. */
+  indoorSlope: number;
+  outdoorSlope: number;
+  shadowingSigmaDb: number;
+}
+
 export interface Settings {
   radio: RadioSettings;
   users: UserSettings;
   sim: SimSettings;
   thresholds: Record<Tech, TechThresholds>;
+  wifi: WifiSettings;
 }
 
 export interface Scenario {
@@ -208,5 +273,7 @@ export interface Scenario {
   users?: UserSpec[];
   /** Older files: manually placed users, merged into `users` on load. */
   fixedUsers?: UserSpec[];
+  /** Wi-Fi access points (optional for older files). */
+  wifi?: WifiAp[];
   settings: Settings;
 }

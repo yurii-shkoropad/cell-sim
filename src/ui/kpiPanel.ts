@@ -71,6 +71,9 @@ interface Row {
   /** PRB (TCH) utilisation, 0..1. */
   util: number;
   byTech?: { GSM: number; LTE: number; NR: number };
+  /** Network only: throughput carried by Wi-Fi APs, Mbps, and sessions over Wi-Fi. */
+  wifi?: number;
+  wifiSessions?: number;
 }
 
 interface ScopeView {
@@ -99,6 +102,9 @@ export function kpiPanel(app: App): HTMLElement {
   const cLoad = mk();
   const cCdf = mk();
   const cThrCdf = mk();
+  const cWifi = mk();
+  const wifiTitle = h('div', { class: 'chart-title', title: 'Served DL throughput carried by the cellular cells and by the Wi-Fi APs (whole network)' }, 'Data traffic: cellular vs Wi-Fi (Mbps)');
+  const wifiBox = h('div', { class: 'chart-box' }, wifiTitle, h('div', { class: 'chart-wrap' }, cWifi));
   const ratTitle = h('div', { class: 'chart-title' }, 'Users by serving RAT');
   const loadTitle = h('div', { class: 'chart-title' }, 'Most loaded cells (PRB / TCH utilisation)');
   const thrCdfTitle = h('div', { class: 'chart-title' }, 'DL throughput distribution of active data users (CDF)');
@@ -172,6 +178,7 @@ export function kpiPanel(app: App): HTMLElement {
       box('Mean SINR of camped users (dB)', cSinr),
       box('Throughput vs capacity (Mbps)', cCap, false, 'Capacity: all RBs (× MU-MIMO gain) at the mean rate per RB of the current users; GSM: all traffic channels as GPRS slots'),
       box('Utilisation (%)', cUtil, false, 'PRB (GSM: TCH) utilisation, and served throughput ÷ capacity'),
+      wifiBox,
       box(`Event timeline (per ${TIMELINE_BUCKET_S} s)`, cEvents, true),
       h('div', { class: 'chart-box tall' }, loadTitle, h('div', { class: 'chart-wrap' }, cLoad)),
       box('SINR distribution of camped users (CDF)', cCdf),
@@ -187,6 +194,8 @@ export function kpiPanel(app: App): HTMLElement {
   const cap = lineChart(cCap, ['Served', 'Demand', 'Capacity'], 'Mbps', 0);
   cap.data.datasets[1].borderDash = [5, 4];
   const util = lineChart(cUtil, ['PRB / TCH utilisation', 'Throughput utilisation'], '%', 0, 100);
+  const wifiChart = lineChart(cWifi, ['Cellular', 'Wi-Fi'], 'Mbps', 0);
+  wifiChart.data.datasets[1].borderColor = wifiChart.data.datasets[1].backgroundColor = '#7b5cd6';
 
   const events = new Chart<'bar', number[], string>(cEvents, {
     type: 'bar',
@@ -273,6 +282,8 @@ export function kpiPanel(app: App): HTMLElement {
           capacity: p.capacityMbps ?? 0,
           util: p.prbUtil ?? 0,
           byTech: p.byTech,
+          wifi: p.wifiServedMbps ?? 0,
+          wifiSessions: p.wifiSessions ?? 0,
         })),
       };
     }
@@ -393,6 +404,13 @@ export function kpiPanel(app: App): HTMLElement {
         tile('PRB utilisation', last ? pct0(last.util) : '—', 'LTE/NR, RB-weighted'),
         tile('Throughput used', last && last.capacity ? pct0(last.served / last.capacity) : '—', last ? `${fmtMbps(last.served)} of ${fmtMbps(last.capacity)}` : '', 'Served DL ÷ estimated capacity of all cells'),
       );
+      if (store.scenario.settings.wifi.enabled && (store.scenario.wifi ?? []).length) {
+        const w = last?.wifi ?? 0;
+        tiles.append(
+          tile('Wi-Fi offload', last && last.served + w > 0 ? pct0(w / (last.served + w)) : '—', `${fmtMbps(w)} over Wi-Fi`, 'Share of the served DL throughput carried by Wi-Fi APs'),
+          tile('Wi-Fi users', s ? String(s.wifiUsers ?? 0) : '—', s ? `${s.wifiSessions ?? 0} sessions · ${k.wifiOffloads} offloaded · ${k.wifiFallbacks} back` : '', 'Phones associated to an AP; sessions carried over Wi-Fi; sessions moved to Wi-Fi and back to cellular since reset'),
+        );
+      }
       return;
     }
     // Site / sector: counters from the cells in scope.
@@ -451,6 +469,17 @@ export function kpiPanel(app: App): HTMLElement {
     util.data.datasets[0].data = series((r) => r.util * 100);
     util.data.datasets[1].data = series((r) => (r.capacity > 0 ? Math.min(100, (100 * r.served) / r.capacity) : 0));
     for (const c of [sessions, rat, thr, sinr, cap, util]) c.update('none');
+    // Wi-Fi offload is a network-wide view (APs are not part of a site's cells).
+    const showWifi = scope.kind === 'network' && (store.scenario.wifi ?? []).length > 0;
+    wifiBox.style.display = showWifi ? '' : 'none';
+    if (showWifi) {
+      wifiChart.data.datasets[0].data = series((r) => r.served);
+      wifiChart.data.datasets[1].data = series((r) => r.wifi ?? 0);
+      const last = v.rows[v.rows.length - 1];
+      const tot = last ? last.served + (last.wifi ?? 0) : 0;
+      wifiTitle.textContent = `Data traffic: cellular vs Wi-Fi (Mbps)${tot > 0 ? ` · ${Math.round((100 * (last!.wifi ?? 0)) / tot)}% offloaded now` : ''}`;
+      wifiChart.update('none');
+    }
 
     // Timeline: last 60 buckets (scope: from the events touching its cells)
     const nowB = Math.floor(engine.t / TIMELINE_BUCKET_S);

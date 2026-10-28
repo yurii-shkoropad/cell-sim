@@ -162,6 +162,19 @@ export class UserInspector {
         after();
       })),
       row('Data demand (Mbps)', demand),
+      row('Wi-Fi', selectEl(
+        [['auto', `Auto (${u.specId && engine.wifiDefault(u.specId) ? 'on' : 'off'}, by device share)`], ['on', 'On'], ['off', 'Off']] as [string, string][],
+        () => {
+          const spec = u.specId ? store.scenario.users?.find((x) => x.id === u.specId) : undefined;
+          return spec?.wifi == null ? 'auto' : spec.wifi ? 'on' : 'off';
+        },
+        (v) => {
+          const wifi = v === 'auto' ? null : v === 'on';
+          if (u.specId) this.app.editUsers([u.specId], { wifi });
+          else engine.setWifiOn(u, wifi ?? false);
+          this.renderLive();
+        },
+      )),
       h('div', { class: 'row' },
         button('Start voice', () => {
           engine.startSessionNow(u, 'voice');
@@ -194,6 +207,28 @@ export class UserInspector {
   }
 
   // ---------------------------------------------------------------- live data
+
+  /** Wi-Fi state: off, searching (best AP heard), or associated (AP link, RSSI/SINR, what it carries). */
+  private wifiRow(u: SimUser, kv: (k: string, v: string, cls?: string) => HTMLElement): HTMLElement {
+    const { engine, store } = this.app;
+    const ws = store.scenario.settings.wifi;
+    const ctx = this.app.ctx();
+    if (!ws.enabled) return kv('Wi-Fi', 'offloading disabled');
+    if (!u.wifiOn) return kv('Wi-Fi', 'off on this phone');
+    if (u.wifiAp < 0) {
+      const cand = u.wifiCand >= 0 ? ctx.wifi[u.wifiCand] : null;
+      const speed = u.mode !== 'static' && u.speed * 3.6 > ws.maxSpeedKmh ? ` · too fast (> ${ws.maxSpeedKmh} km/h)` : '';
+      return kv('Wi-Fi', cand ? `joining ${cand.name}, ${Math.round(u.wifiTimerMs)}/${ws.assocDelayMs} ms` : Number.isFinite(u.wifiRssi) ? `not associated · best AP ${fmt(u.wifiRssi, 0)} dBm (join ≥ ${ws.minRssiDbm + ws.hysteresisDb})${speed}` : `no AP in range${speed}`);
+    }
+    const ap = ctx.wifi[u.wifiAp];
+    const carries = engine.onWifi(u) ? `${u.session!.kind} over Wi-Fi` : u.session ? `${u.session.kind} stays on cellular` : 'idle';
+    return h('div', { class: 'kv' }, h('span', null, 'Wi-Fi'), h('b', null,
+      h('a', { href: '#', class: 'cell-link', title: 'Open this AP', onclick: (e: Event) => e.preventDefault(), onmousedown: (e: Event) => {
+        e.preventDefault();
+        store.selectAp(ap.apId);
+      } }, ap.name),
+      ` · RSSI ${fmt(u.wifiRssi, 0)} dBm · SINR ${fmt(u.wifiSinr, 1)} dB · ${carries}`));
+  }
 
   renderLive() {
     const u = this.user();
@@ -234,6 +269,7 @@ export class UserInspector {
         kv('Mobility', u.mode === 'static' ? 'static' : `${u.mode === 'walk' ? 'pedestrian' : 'vehicle'}, ${Math.round(u.speed * 3.6)} km/h${u.dragging ? ' (dragging)' : ''}`),
         kv('Device', `${techsOf(u.techMask).join(' / ')} · ${engine.ueRx(u)} Rx antenna${engine.ueRx(u) > 1 ? 's' : ''}${u.ueRxOverride === null ? '' : ' (set)'}`),
         kv('Position', `${u.lat.toFixed(5)}, ${u.lng.toFixed(5)}`),
+        this.wifiRow(u, kv),
         c
           ? h('div', { class: 'kv' }, h('span', null, 'Serving cell'), h('b', null,
               h('a', { href: '#', class: 'cell-link', title: 'Open this station', onclick: (e: Event) => e.preventDefault(), onmousedown: (e: Event) => {
@@ -258,7 +294,7 @@ export class UserInspector {
         kv('Scheduler', c && c.tech !== 'GSM' ? `${schedulerInfo(engine.cellScheduler(u.serving))?.label} · cell load ${Math.round(engine.cells[u.serving].load * 100)}%` : '—'),
         kv('Max possible', c ? maxPossible(c, engine.ueRx(u), store.scenario.settings.radio.overhead) : '—'),
         kv('Peak here', c && c.tech !== 'GSM' ? `${fmt(peakRateMbps(c, u.sinr, store.scenario.settings.radio, engine.ueRx(u)), 1)} Mbps (alone in the cell)` : '—'),
-        kv('Throughput', s?.kind === 'data' ? `${fmt(u.thrMbps, 2)} of ${fmt(s.demandMbps, 2)} Mbps` : s ? `${fmt(u.thrMbps * 1000, 0)} kbps (GBR)` : '—'),
+        kv('Throughput', (s?.kind === 'data' ? `${fmt(u.thrMbps, 2)} of ${fmt(s.demandMbps, 2)} Mbps` : s ? `${fmt(u.thrMbps * 1000, 0)} kbps (GBR)` : '—') + (engine.onWifi(u) ? ' · over Wi-Fi' : '')),
         kv('HO candidate', u.hoCand >= 0 && ctx.cells[u.hoCand] && c ? `${ctx.cells[u.hoCand].name}, TTT ${Math.max(0, u.hoTimerMs).toFixed(0)}/${engine.hoParams(u.serving).tttMs} ms` : u.hoTimerMs < 0 ? `back-off ${(-u.hoTimerMs).toFixed(0)} ms` : '—'),
         kv('RLF timer', u.rlfTimerMs > 0 ? `${u.rlfTimerMs.toFixed(0)}/${th?.rlfTimerMs ?? 0} ms` : '—', u.rlfTimerMs > 0 ? 'bad' : ''),
       ),

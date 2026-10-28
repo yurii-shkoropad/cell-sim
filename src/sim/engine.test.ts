@@ -33,7 +33,7 @@ describe('SimEngine', () => {
     expect(k.hoSuccess).toBeLessThanOrEqual(k.hoAttempts);
     // Occupancy bookkeeping must match the users' actual sessions.
     const active = new Array(eng.cells.length).fill(0);
-    for (const u of eng.users) if (u.session && u.serving >= 0) active[u.serving]++;
+    for (const u of eng.users) if (u.session && u.serving >= 0 && !eng.onWifi(u)) active[u.serving]++;
     eng.cells.forEach((c, i) => expect(c.active).toBe(active[i]));
     for (const c of eng.cells) expect(c.load).toBeLessThanOrEqual(1 + 1e-9);
   }, 30000);
@@ -103,7 +103,7 @@ describe('SimEngine', () => {
     eng.removeUser(u.id);
     expect(eng.userById(u.id)).toBeUndefined();
     const active = new Array(eng.cells.length).fill(0);
-    for (const x of eng.users) if (x.session && x.serving >= 0) active[x.serving]++;
+    for (const x of eng.users) if (x.session && x.serving >= 0 && !eng.onWifi(x)) active[x.serving]++;
     eng.cells.forEach((c, i) => expect(c.active).toBe(active[i]));
   });
 

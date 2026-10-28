@@ -1,5 +1,6 @@
 import { LocalProjection } from '../geo';
 import { GSM_SLOT_MBPS, linkRank, ratePerRbMbps, rxLevel, sinrDb, type RadioContext } from '../radio/cells';
+import { wifiRateMbps, wifiRssi, wifiSinrDb } from '../radio/wifi';
 import { muMimoGain } from '../radio/mimo';
 import { allocate, jainIndex, pfDiversityGainDb, schedulerInfo, type SchedulerKey } from './scheduler';
 import type { Mobility, Scenario, Settings, Tech, TrafficMode, UserSpec } from '../types';
@@ -71,7 +72,35 @@ export interface SimUser {
   nextData: number;
   prevCellKey: string | null;
   lastHoT: number;
+  /** Phone has Wi-Fi switched on. */
+  wifiOn: boolean;
+  /** Associated AP (index into ctx.wifi), −1 = not associated. */
+  wifiAp: number;
+  wifiApId: string | null;
+  wifiRssi: number;
+  wifiSinr: number;
+  /** Candidate AP and how long the join condition has held, ms. */
+  wifiCand: number;
+  wifiTimerMs: number;
 }
+
+/** Live statistics of one Wi-Fi AP. */
+export interface ApState {
+  /** Associated users. */
+  assoc: number;
+  /** Associated users with a session carried over Wi-Fi. */
+  active: number;
+  /** Airtime in use, 0..1. */
+  airtime: number;
+  servedMbps: number;
+  demandMbps: number;
+  /** Throughput the AP could deliver now (mean user rate, capped by backhaul), Mbps. */
+  capacityMbps: number;
+  joins: number;
+  leaves: number;
+}
+
+const emptyAp = (): ApState => ({ assoc: 0, active: 0, airtime: 0, servedMbps: 0, demandMbps: 0, capacityMbps: 0, joins: 0, leaves: 0 });
 
 export interface CellState {
   /** Users with an active session on the cell. */
@@ -133,6 +162,21 @@ function mulberry32(seed: number) {
   };
 }
 
+/** Stable pseudo-random number in [0,1) from a string (FNV-1a), e.g. "does this phone have Wi-Fi on". */
+export function stableShare(id: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0) / 4294967296;
+}
+
+/** APs farther than this are not measured (far below any useful RSSI). */
+const WIFI_MAX_RANGE_M = 600;
+/** Minimum airtime activity assumed for an AP (beacons, management frames). */
+const WIFI_MIN_ACTIVITY = 0.05;
+
 const cellKey = (ctx: RadioContext, i: number) => `${ctx.cells[i].bsId}/${ctx.cells[i].sectorId}`;
 
 export class SimEngine {
@@ -144,6 +188,10 @@ export class SimEngine {
   area: Bounds;
   users: SimUser[] = [];
   cells: CellState[] = [];
+  aps: ApState[] = [];
+  /** Airtime activity per AP, used as the interference weight of co-channel APs. */
+  private apActivity = new Float32Array(0);
+  private apRssi = new Float64Array(0);
   /** Interference load factor per cell, consumed by SINR computation. */
   loads = new Float32Array(0);
   t = 0;
@@ -197,14 +245,37 @@ export class SimEngine {
         if (pc) Object.assign(this.cells[ni], { hoIn: pc.hoIn, hoOut: pc.hoOut, drops: pc.drops, blocks: pc.blocks, started: pc.started });
       });
     }
+    // Wi-Fi APs: keep statistics and associations by AP id.
+    const prevAps = this.aps;
+    const oldWifi = old?.wifi ?? [];
+    const apToNew = new Map(ctx.wifi.map((a, i) => [a.apId, i]));
+    this.aps = ctx.wifi.map(() => emptyAp());
+    oldWifi.forEach((a, i) => {
+      const ni = apToNew.get(a.apId);
+      if (ni !== undefined && prevAps[i]) Object.assign(this.aps[ni], { joins: prevAps[i].joins, leaves: prevAps[i].leaves });
+    });
+    this.apActivity = new Float32Array(ctx.wifi.length).fill(0.05);
+    this.apRssi = new Float64Array(ctx.wifi.length);
     for (const u of this.users) {
       const ni = u.servingKey ? keyToNew.get(u.servingKey) : undefined;
       u.serving = ni ?? -1;
       if (ni === undefined) u.servingKey = null;
       u.hoCand = -1;
       u.hoTimerMs = 0;
+      const na = u.wifiApId ? apToNew.get(u.wifiApId) : undefined;
+      u.wifiAp = na ?? -1;
+      if (na === undefined) u.wifiApId = null;
+      u.wifiCand = -1;
+      u.wifiTimerMs = 0;
+    }
+    // Users without their own Wi-Fi setting follow the (possibly changed) device share.
+    const specs = new Map((scn.users ?? []).map((f) => [f.id, f]));
+    for (const u of this.users) {
+      const f = u.specId ? specs.get(u.specId) : undefined;
+      if (f && f.wifi == null) u.wifiOn = this.wifiDefault(f.id);
     }
     this.recountOccupancy();
+
   }
 
   setGraph(g: RoadGraph | null) {
@@ -225,6 +296,8 @@ export class SimEngine {
     this.nextSampleT = 0;
     this.rng = mulberry32(this.settings.sim.seed);
     for (const c of this.cells) Object.assign(c, { active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0, servedMbps: 0, demandMbps: 0, capacityMbps: 0, started: 0 });
+    this.aps = this.ctx.wifi.map(() => emptyAp());
+    this.apActivity.fill(0.05);
     this.loads.fill(this.initialLoad());
     this.spawnUsers();
   }
@@ -279,6 +352,13 @@ export class SimEngine {
         nextData: this.expo(3600 / Math.max(us.dataSessionsPerHour, 1e-6)),
         prevCellKey: null,
         lastHoT: -1e9,
+        wifiOn: stableShare(`u${this.nextUserId}`) < this.settings.wifi.deviceShare,
+        wifiAp: -1,
+        wifiApId: null,
+        wifiRssi: -Infinity,
+        wifiSinr: -Infinity,
+        wifiCand: -1,
+        wifiTimerMs: 0,
       };
   }
 
@@ -513,10 +593,264 @@ export class SimEngine {
   }
 
   private detach(u: SimUser) {
-    if (u.serving < 0 || !u.session) return;
+    if (u.serving < 0 || !u.session || this.onWifi(u)) return;
     const s = this.cells[u.serving];
     s.active = Math.max(0, s.active - 1);
     if (this.ctx.cells[u.serving].tech === 'GSM') s.tchUsed = Math.max(0, s.tchUsed - 1);
+  }
+
+  // ---------------------------------------------------------------- Wi-Fi offload
+
+  /** Wi-Fi can carry this kind of session (voice only with voice over Wi-Fi). */
+  private wifiCarries(kind: SessionKind): boolean {
+    return kind === 'data' || this.settings.wifi.voiceOverWifi;
+  }
+
+  /** The user's current session is carried by its Wi-Fi AP, not by the cellular network. */
+  onWifi(u: SimUser): boolean {
+    return u.wifiAp >= 0 && !!u.session && this.wifiCarries(u.session.kind);
+  }
+
+  private apAllowed(u: SimUser, j: number): boolean {
+    const ap = this.ctx.wifi[j];
+    return ap.opIdx < 0 || ap.opIdx === u.opIdx;
+  }
+
+  private moving(u: SimUser): boolean {
+    return u.mode !== 'static' && !u.dragging && this.t >= u.dwellUntil;
+  }
+
+  /**
+   * Measure all nearby APs into apRssi; returns the best AP the user may associate with
+   * (−1 if none). Also updates the user's Wi-Fi RSSI/SINR for its AP (or the best one).
+   */
+  private wifiMeasure(u: SimUser): number {
+    const ws = this.settings.wifi;
+    const aps = this.ctx.wifi;
+    const rssi = this.apRssi;
+    let best = -1;
+    for (let j = 0; j < aps.length; j++) {
+      const ap = aps[j];
+      if (Math.abs(u.x - ap.x) > WIFI_MAX_RANGE_M || Math.abs(u.y - ap.y) > WIFI_MAX_RANGE_M) {
+        rssi[j] = -Infinity;
+        continue;
+      }
+      rssi[j] = wifiRssi(ap, u.x, u.y, ws);
+      if (!this.apAllowed(u, j)) continue;
+      const full = j !== u.wifiAp && this.aps[j].assoc >= ap.maxUsers;
+      if (!full && (best < 0 || rssi[j] > rssi[best])) best = j;
+    }
+    const k = u.wifiAp >= 0 ? u.wifiAp : best;
+    u.wifiRssi = k >= 0 ? rssi[k] : -Infinity;
+    u.wifiSinr = k >= 0 && rssi[k] > -Infinity ? wifiSinrDb(aps, rssi, k, this.apActivity) : -Infinity;
+    return best;
+  }
+
+  /** Throughput the user would get on AP j if it joined now, Mbps (equal airtime share). */
+  private wifiEstimate(u: SimUser, j: number): number {
+    const ws = this.settings.wifi;
+    const ap = this.ctx.wifi[j];
+    const sinr = wifiSinrDb(this.ctx.wifi, this.apRssi, j, this.apActivity);
+    const n = this.aps[j].active + (j === u.wifiAp ? 0 : 1);
+    return Math.min(wifiRateMbps(ap, sinr, ws.ueStreams, ws.alpha), ap.backhaulMbps) / Math.max(n, 1);
+  }
+
+  /** Throughput the user gets (or would get) on its cellular cell, Mbps. */
+  private cellularEstimate(u: SimUser): number {
+    if (u.serving < 0) return 0;
+    if (u.session && !this.onWifi(u)) return u.thrMbps;
+    const c = this.ctx.cells[u.serving];
+    if (c.tech === 'GSM') return GSM_SLOT_MBPS;
+    const free = Math.max(0, 1 - this.cells[u.serving].load);
+    const n = this.cells[u.serving].active + 1;
+    return ratePerRbMbps(c, u.sinr, this.settings.radio, this.ueRx(u)) * c.rbs * Math.max(free, 1 / n);
+  }
+
+  /** The offload policy allows moving this user from cellular to AP j. */
+  private policyAllows(u: SimUser, j: number): boolean {
+    const ws = this.settings.wifi;
+    if (u.serving < 0) return true; // no cellular service: anything is better
+    switch (ws.policy) {
+      case 'prefer-wifi':
+        return true;
+      case 'cell-load':
+        return this.cells[u.serving].load >= ws.loadThreshold;
+      case 'better-throughput':
+        return this.wifiEstimate(u, j) > this.cellularEstimate(u) * ws.throughputMargin;
+    }
+  }
+
+  private wifiJoin(u: SimUser, j: number) {
+    const from = u.wifiAp;
+    const name = this.ctx.wifi[j].name;
+    if (from >= 0) {
+      // Roaming between APs: the session stays on Wi-Fi.
+      this.aps[from].assoc = Math.max(0, this.aps[from].assoc - 1);
+      this.aps[from].leaves++;
+      u.wifiAp = j;
+      u.wifiApId = this.ctx.wifi[j].apId;
+      this.aps[j].assoc++;
+      this.aps[j].joins++;
+      this.emit('WIFI_JOIN', u, `roamed ${this.ctx.wifi[from].name} → ${name}`, undefined, undefined, j);
+      return;
+    }
+    const moved = !!u.session && this.wifiCarries(u.session.kind);
+    if (moved) {
+      this.detach(u); // leave the cell before onWifi() becomes true
+      this.counters.wifiOffloads++;
+    }
+    u.wifiAp = j;
+    u.wifiApId = this.ctx.wifi[j].apId;
+    u.hoCand = -1;
+    u.hoTimerMs = 0;
+    u.rlfTimerMs = 0;
+    this.aps[j].assoc++;
+    this.aps[j].joins++;
+    this.emit('WIFI_JOIN', u, `associated to ${name}, RSSI ${u.wifiRssi.toFixed(0)} dBm${moved ? `, ${u.session!.kind} session offloaded` : ''}`, moved ? u.serving : undefined, undefined, j);
+  }
+
+  /** Leave the AP; a session it carried goes back to cellular, or drops if the cell can't take it. */
+  private wifiLeave(u: SimUser, reason: string) {
+    const j = u.wifiAp;
+    if (j < 0) return;
+    const carried = this.onWifi(u);
+    const name = this.ctx.wifi[j]?.name ?? u.wifiApId ?? 'AP';
+    if (this.aps[j]) {
+      this.aps[j].assoc = Math.max(0, this.aps[j].assoc - 1);
+      this.aps[j].leaves++;
+    }
+    u.wifiAp = -1;
+    u.wifiApId = null;
+    u.wifiCand = -1;
+    u.wifiTimerMs = 0;
+    if (!carried) {
+      this.emit('WIFI_LEAVE', u, `left ${name}: ${reason}`, undefined, undefined, j);
+      return;
+    }
+    const kind = u.session!.kind;
+    this.counters.wifiFallbacks++;
+    if (u.serving >= 0) u.sinr = this.sinrAt(u.serving, u.x, u.y);
+    if (u.serving >= 0 && this.canAdmit(u.serving, kind, u)) {
+      this.attach(u.serving);
+      this.emit('WIFI_LEAVE', u, `left ${name}: ${reason}; ${kind} session back on cellular`, undefined, u.serving, j);
+      return;
+    }
+    // Not attached to a cell, so no detach (dropSession would detach).
+    if (u.serving >= 0) this.cells[u.serving].drops++;
+    this.counters.dropped++;
+    this.emit('WIFI_LEAVE', u, `left ${name}: ${reason}`, undefined, undefined, j);
+    this.emit('DROP', u, `${kind} dropped: Wi-Fi lost, ${u.serving < 0 ? 'no cellular coverage' : 'no cellular capacity'}`, u.serving);
+    this.endSession(u, CONTINUOUS_RETRY_S.drop);
+  }
+
+  /** Association management for one user: leave, roam or join with hysteresis and delay. */
+  private wifiStep(u: SimUser, dtMs: number) {
+    const ws = this.settings.wifi;
+    if (!ws.enabled || !u.wifiOn || !this.ctx.wifi.length) {
+      if (u.wifiAp >= 0) this.wifiLeave(u, ws.enabled ? 'Wi-Fi switched off' : 'Wi-Fi offload disabled');
+      u.wifiRssi = -Infinity;
+      u.wifiSinr = -Infinity;
+      return;
+    }
+    const best = this.wifiMeasure(u);
+    const tooFast = this.moving(u) && u.speed * 3.6 > ws.maxSpeedKmh;
+    const cur = u.wifiAp;
+    if (cur >= 0) {
+      const r = this.apRssi[cur];
+      const reason =
+        !this.apAllowed(u, cur) ? 'not allowed for this operator'
+        : r < ws.minRssiDbm ? `RSSI ${r === -Infinity ? 'none' : r.toFixed(0) + ' dBm'}`
+        : tooFast ? `speed ${(u.speed * 3.6).toFixed(0)} km/h`
+        : null;
+      if (reason) {
+        this.wifiLeave(u, reason);
+        this.wifiMeasure(u);
+        return;
+      }
+    }
+    // Candidate: a better AP to roam to, or any acceptable AP to join.
+    let cand = -1;
+    if (best >= 0 && best !== cur && !tooFast) {
+      const r = this.apRssi[best];
+      if (cur >= 0) {
+        if (r > this.apRssi[cur] + ws.hysteresisDb) cand = best;
+      } else if (r >= ws.minRssiDbm + ws.hysteresisDb && this.policyAllows(u, best)) cand = best;
+    }
+    if (cand < 0) {
+      u.wifiCand = -1;
+      u.wifiTimerMs = 0;
+      return;
+    }
+    if (cand === u.wifiCand) u.wifiTimerMs += dtMs;
+    else {
+      u.wifiCand = cand;
+      u.wifiTimerMs = dtMs;
+    }
+    if (u.wifiTimerMs >= ws.assocDelayMs) {
+      u.wifiCand = -1;
+      u.wifiTimerMs = 0;
+      this.wifiJoin(u, cand);
+      this.wifiMeasure(u);
+    }
+  }
+
+  /** Wi-Fi on/off for a user without an explicit setting: stable per user, by the device share. */
+  wifiDefault(specId: string): boolean {
+    return stableShare(specId) < this.settings.wifi.deviceShare;
+  }
+
+  /** Switch the phone's Wi-Fi on or off. */
+  setWifiOn(u: SimUser, on: boolean) {
+    u.wifiOn = on;
+    if (!on) this.wifiLeave(u, 'Wi-Fi switched off');
+    this.refreshUser(u);
+  }
+
+  /**
+   * Airtime scheduling on each AP: voice first (when carried), then data with
+   * equal throughput (802.11 DCF gives stations equal transmit opportunities, so
+   * slow stations drag everyone down: the "performance anomaly"), capped by backhaul.
+   */
+  private scheduleWifi() {
+    const ws = this.settings.wifi;
+    const aps = this.ctx.wifi;
+    const per: SimUser[][] = aps.map(() => []);
+    for (const st of this.aps) Object.assign(st, { assoc: 0, active: 0, airtime: 0, servedMbps: 0, demandMbps: 0, capacityMbps: 0 });
+    for (const u of this.users) {
+      if (u.wifiAp < 0) continue;
+      this.aps[u.wifiAp].assoc++;
+      if (this.onWifi(u)) per[u.wifiAp].push(u);
+    }
+    aps.forEach((ap, j) => {
+      const st = this.aps[j];
+      const list = per[j];
+      const rate = list.map((u) => wifiRateMbps(ap, u.wifiSinr, ws.ueStreams, ws.alpha));
+      const air = new Array<number>(list.length).fill(0);
+      let pool = 1;
+      list.forEach((u, k) => {
+        if (u.session!.kind !== 'voice' || rate[k] <= 0) return;
+        air[k] = Math.min(VOICE_GBR_MBPS / rate[k], pool);
+        pool -= air[k];
+      });
+      const data = list.map((_, k) => k).filter((k) => list[k].session!.kind === 'data' && rate[k] > 0);
+      const a = allocate('maxmin', data.map((k) => ({ rate: rate[k], need: list[k].session!.demandMbps / rate[k] })), pool);
+      data.forEach((k, n) => (air[k] = a[n]));
+      let served = list.reduce((s, _, k) => s + air[k] * rate[k], 0);
+      const scale = served > ap.backhaulMbps ? ap.backhaulMbps / served : 1;
+      list.forEach((u, k) => {
+        u.thrMbps = air[k] * rate[k] * scale;
+        u.rank = rate[k] > 0 ? Math.min(ap.streams, ws.ueStreams) : 0;
+      });
+      served *= scale;
+      st.active = list.length;
+      st.airtime = air.reduce((s, x) => s + x * scale, 0);
+      st.servedMbps = served;
+      st.demandMbps = list.reduce((s, u) => s + (u.session!.kind === 'data' ? u.session!.demandMbps : VOICE_GBR_MBPS), 0);
+      const served1 = rate.filter((x) => x > 0);
+      const mean = served1.length ? served1.reduce((s, x) => s + x, 0) / served1.length : wifiRateMbps(ap, 25, ws.ueStreams, ws.alpha);
+      st.capacityMbps = Math.min(mean, ap.backhaulMbps);
+      this.apActivity[j] = Math.max(WIFI_MIN_ACTIVITY, st.airtime);
+    });
   }
 
   private recountOccupancy() {
@@ -528,17 +862,18 @@ export class SimEngine {
     for (const u of this.users) {
       if (u.serving < 0) continue;
       this.cells[u.serving].camped++;
-      if (u.session) this.attach(u.serving);
+      if (u.session && !this.onWifi(u)) this.attach(u.serving);
     }
   }
 
   // ---------------------------------------------------------------- events
 
-  private emit(type: SimEventType, u: SimUser, detail: string, from?: number, to?: number) {
+  private emit(type: SimEventType, u: SimUser, detail: string, from?: number, to?: number, ap?: number) {
     this.log.push({
       t: this.t,
       type,
       userId: u.id,
+      ap: ap !== undefined && ap >= 0 ? this.ctx.wifi[ap]?.apId : undefined,
       from: from !== undefined && from >= 0 ? this.ctx.cells[from].name : undefined,
       to: to !== undefined && to >= 0 ? this.ctx.cells[to].name : undefined,
       lat: u.lat,
@@ -624,6 +959,7 @@ export class SimEngine {
 
       const { best, lvl } = this.bestPerTech(u);
       const servLvl = u.serving >= 0 ? this.level(u.serving, u.x, u.y) : -Infinity;
+      this.wifiStep(u, dtMs);
 
       if (!u.session) {
         this.idleSelect(u, best, lvl, servLvl);
@@ -641,9 +977,14 @@ export class SimEngine {
 
       // ---- connected mode
       if (this.t >= u.session.end) {
-        this.emit('CALL_END', u, `${u.session.kind} completed`, u.serving);
+        this.emit('CALL_END', u, `${u.session.kind} completed${this.onWifi(u) ? ' (Wi-Fi)' : ''}`, u.serving);
         this.detach(u);
         this.endSession(u);
+        continue;
+      }
+      if (this.onWifi(u)) {
+        // Session carried over Wi-Fi: the phone just stays camped on cellular.
+        this.idleSelect(u, best, lvl, servLvl);
         continue;
       }
       if (u.serving < 0) {
@@ -738,6 +1079,13 @@ export class SimEngine {
     const demand = kind === 'voice' ? VOICE_GBR_MBPS : (u.demandMbps ?? this.expo(us.dataMeanDemandMbps));
     if (kind === 'voice') this.counters.voiceStarted++;
     else this.counters.dataStarted++;
+    if (u.wifiAp >= 0 && this.wifiCarries(kind)) {
+      // Associated to Wi-Fi: the session goes over the AP (association already passed its admission).
+      u.session = { kind, start: this.t, end: this.t + Math.max(dur, 2), demandMbps: demand };
+      u.rlfTimerMs = 0;
+      this.emit('CALL_START', u, `${kind === 'voice' ? 'voice call' : `data, demand ${demand.toFixed(2)} Mbps`} via Wi-Fi ${this.ctx.wifi[u.wifiAp].name}`);
+      return;
+    }
     if (u.serving < 0) {
       this.counters.blockedCoverage++;
       this.emit('BLOCK', u, `${kind} blocked: no coverage`);
@@ -773,6 +1121,7 @@ export class SimEngine {
     const u = this.newUser(this.opIndex(f.operatorId), techMaskOf(f.techs), f.mobility);
     u.specId = f.id;
     u.name = f.name;
+    u.wifiOn = f.wifi ?? this.wifiDefault(f.id);
     if (f.speedKmh != null && f.mobility !== 'static') {
       u.speed = f.speedKmh / 3.6;
       u.speedFixed = true;
@@ -917,6 +1266,7 @@ export class SimEngine {
       u.rx = servLvl;
       u.sinr = this.sinrAt(u.serving, u.x, u.y);
     }
+    if (this.settings.wifi.enabled && u.wifiOn && this.ctx.wifi.length) this.wifiMeasure(u);
     this.schedule();
   }
 
@@ -1008,7 +1358,7 @@ export class SimEngine {
     const perCell: SimUser[][] = Array.from({ length: C }, () => []);
     const demand: number[] = [];
     for (const u of this.users) {
-      if (u.serving < 0 || !u.session || this.ctx.cells[u.serving].tech === 'GSM' || (cells && !cells.has(u.serving))) continue;
+      if (u.serving < 0 || !u.session || this.onWifi(u) || this.ctx.cells[u.serving].tech === 'GSM' || (cells && !cells.has(u.serving))) continue;
       perCell[u.serving].push(u);
       if (u.session.kind === 'data') demand.push(u.session.demandMbps);
     }
@@ -1043,7 +1393,7 @@ export class SimEngine {
     for (const u of this.users) {
       if (u.serving < 0) continue;
       this.cells[u.serving].camped++;
-      if (u.session) perCell[u.serving].push(u);
+      if (u.session && !this.onWifi(u)) perCell[u.serving].push(u);
     }
     for (let i = 0; i < C; i++) {
       const c = this.ctx.cells[i];
@@ -1081,6 +1431,7 @@ export class SimEngine {
       st.capacityMbps = c.rbs * rate * a.mu;
       this.loads[i] = r.interferenceLoad === 'full' ? 1 : Math.max(r.minInterfererLoad, st.load);
     }
+    this.scheduleWifi();
   }
 
   /** Append one CellSample per cell to its history. */
@@ -1098,6 +1449,7 @@ export class SimEngine {
         sinrSum[i] += u.sinr;
         sinrN[i]++;
       }
+      if (this.onWifi(u)) continue;
       if (u.session?.kind === 'voice') voice[i]++;
       else if (u.session?.kind === 'data') {
         data[i]++;
@@ -1150,7 +1502,7 @@ export class SimEngine {
       if (u.session?.kind === 'data') {
         data++;
         thr.push(u.thrMbps);
-        if (u.serving >= 0) {
+        if (u.serving >= 0 && !this.onWifi(u)) {
           const l = satByCell.get(u.serving) ?? [];
           l.push(Math.min(1, u.thrMbps / Math.max(u.session.demandMbps, 1e-9)));
           satByCell.set(u.serving, l);
@@ -1172,6 +1524,13 @@ export class SimEngine {
         rbs += this.ctx.cells[i].rbs;
       }
     });
+    let wifiUsers = 0;
+    let wifiSessions = 0;
+    for (const u of this.users) {
+      if (u.wifiAp < 0) continue;
+      wifiUsers++;
+      if (this.onWifi(u)) wifiSessions++;
+    }
     this.sampleCells();
     this.samples.push({
       t: this.t,
@@ -1187,6 +1546,10 @@ export class SimEngine {
       demandMbps: demand,
       capacityMbps: capacity,
       prbUtil: rbs ? usedRb / rbs : 0,
+      wifiUsers,
+      wifiSessions,
+      wifiServedMbps: this.aps.reduce((a, s) => a + s.servedMbps, 0),
+      wifiCapacityMbps: this.aps.reduce((a, s) => a + s.capacityMbps, 0),
     });
     if (this.samples.length > 3600) this.samples.shift();
   }

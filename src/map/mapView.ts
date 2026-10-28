@@ -8,7 +8,8 @@ import type { Zone } from '../sim/population';
 import type { RoadGraph } from '../sim/roads';
 import type { Store } from '../state/store';
 import type { BuildingSet } from '../radio/buildings';
-import type { BaseStation } from '../types';
+import type { BaseStation, WifiAp } from '../types';
+import { wifiRangeM } from '../radio/wifi';
 
 const TECH_SHORT = { GSM: '2G', LTE: '4G', NR: '5G' } as const;
 
@@ -19,9 +20,14 @@ const BUILDING_RAMP: [number, string][] = [[6, '#b7d3f6'], [12, '#86b6ef'], [18,
 export const buildingColor = (h: number) => BUILDING_RAMP.find(([max]) => h < max)![1];
 export const BUILDING_LEGEND = BUILDING_RAMP;
 
-/** Fill = state (idle / voice / data / no service); outline = mobility; active users are larger. */
-function userStyle(u: SimUser): L.CircleMarkerOptions {
-  const fill = u.serving < 0 ? '#000' : u.session?.kind === 'voice' ? '#1565c0' : u.session?.kind === 'data' ? '#2e7d32' : '#9e9e9e';
+/** Colour of public Wi-Fi APs and of sessions carried over Wi-Fi. */
+export const WIFI_COLOR = '#7b5cd6';
+
+const WIFI_SVG = '<svg viewBox="0 0 16 16"><path d="M1.8 6.2a9 9 0 0 1 12.4 0M4.3 8.8a5.4 5.4 0 0 1 7.4 0M6.6 11.3a2 2 0 0 1 2.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="13.4" r="1.2" fill="currentColor"/></svg>';
+
+/** Fill = state (idle / voice / data / over Wi-Fi / no service); outline = mobility; active users are larger. */
+function userStyle(u: SimUser, onWifi: boolean): L.CircleMarkerOptions {
+  const fill = onWifi ? WIFI_COLOR : u.serving < 0 && !u.session ? '#000' : u.session?.kind === 'voice' ? '#1565c0' : u.session?.kind === 'data' ? '#2e7d32' : '#9e9e9e';
   const stroke = u.mode === 'drive' ? '#222' : u.mode === 'static' ? '#f2b705' : '#fff';
   return { fillColor: fill, color: stroke, weight: u.mode === 'static' ? 2 : 1, radius: u.session ? 5 : 3.5 };
 }
@@ -59,7 +65,7 @@ export class MapView {
    * What a click on the empty map does: place a base station or a user, pick a
    * zone for batch-adding users (rectangle: two corners; circle: its centre), or nothing.
    */
-  placeMode: 'site' | 'user' | 'zone-rect' | 'zone-circle' | null = null;
+  placeMode: 'site' | 'user' | 'wifi' | 'zone-rect' | 'zone-circle' | null = null;
   /** Called when a zone is picked; the mode then ends. */
   onZone: (z: Zone) => void = () => {};
   /** Radius used by the circle zone preview, m. */
@@ -72,6 +78,8 @@ export class MapView {
   private placeListeners: (() => void)[] = [];
   onAddSite: (lat: number, lng: number) => void = () => {};
   onAddUser: (lat: number, lng: number) => void = () => {};
+  onAddAp: (lat: number, lng: number) => void = () => {};
+  onApMoved: (id: string) => void = () => {};
   onStationMoved: (id: string) => void = () => {};
   onUserClick: (userId: number) => void = () => {};
   /** Called while a user is dragged (`final` false) and once on drop. */
@@ -83,7 +91,7 @@ export class MapView {
   private banner: HTMLDivElement;
   private bannerText: HTMLSpanElement;
   /** Describe what clicking will place (set by the panels that own each mode). */
-  placeHint: Record<'site' | 'user', () => string> = { site: () => 'Click the map to place a base station', user: () => 'Click the map to place a user' };
+  placeHint: Record<'site' | 'user' | 'wifi', () => string> = { site: () => 'Click the map to place a base station', user: () => 'Click the map to place a user', wifi: () => 'Click the map to place a Wi-Fi access point' };
 
   constructor(
     el: HTMLElement,
@@ -109,11 +117,13 @@ export class MapView {
     this.roadLayer = L.layerGroup();
     this.sectorLayer.addTo(this.map);
     this.stationLayer.addTo(this.map);
+    this.wifiLayer.addTo(this.map);
 
     this.map.on('click', (e: L.LeafletMouseEvent) => {
       if (this.suppressClick) return;
       if (this.placeMode === 'site') this.onAddSite(e.latlng.lat, e.latlng.lng);
       else if (this.placeMode === 'user') this.onAddUser(e.latlng.lat, e.latlng.lng);
+      else if (this.placeMode === 'wifi') this.onAddAp(e.latlng.lat, e.latlng.lng);
       else if (this.placeMode === 'zone-circle') {
         const c = e.latlng;
         this.setPlaceMode(null);
@@ -125,7 +135,10 @@ export class MapView {
           this.setPlaceMode(null);
           this.onZone({ kind: 'rect', south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() });
         }
-      } else store.select(null);
+      } else {
+        store.selectedApId = null;
+        store.select(null);
+      }
     });
     // Live preview of the zone being picked.
     this.map.on('mousemove', (e: L.LeafletMouseEvent) => {
@@ -167,6 +180,7 @@ export class MapView {
     this.map.getContainer().classList.toggle('add-mode', mode !== null);
     this.refreshBanner();
     for (const m of this.markers.values()) this.applyDraggable(m);
+    for (const m of this.apMarkers.values()) (mode === 'wifi' ? m.dragging?.enable() : m.dragging?.disable());
     this.placeListeners.forEach((fn) => fn());
   }
 
@@ -184,7 +198,7 @@ export class MapView {
       sub.textContent = mode === 'zone-rect' ? 'Click one corner, then the opposite corner · Esc to cancel' : 'Click the map · Esc to cancel';
     } else {
       title.textContent = this.placeHint[mode]();
-      sub.textContent = mode === 'site' ? 'Click the map to add · drag sites to move · Esc to finish' : 'Click the map to add · Esc to finish';
+      sub.textContent = mode === 'site' ? 'Click the map to add · drag sites to move · Esc to finish' : mode === 'wifi' ? 'Click the map to add · drag APs to move · Esc to finish' : 'Click the map to add · Esc to finish';
     }
     this.bannerText.append(title, sub);
   }
@@ -340,6 +354,79 @@ export class MapView {
     }
   }
 
+  // ---------------------------------------------------------------- Wi-Fi
+
+  private wifiLayer = L.layerGroup();
+  private apMarkers = new Map<string, L.Marker>();
+  private apRange = L.layerGroup();
+
+  /** AP markers and association-range circles (median RSSI = the minimum RSSI). */
+  renderWifi() {
+    const scn = this.store.scenario;
+    const aps = scn.wifi ?? [];
+    const show = this.store.layers.showWifi;
+    this.apRange.clearLayers();
+    if (!show) {
+      this.wifiLayer.clearLayers();
+      this.apMarkers.clear();
+      return;
+    }
+    this.apRange.addTo(this.wifiLayer);
+    const minRssi = scn.settings.wifi.minRssiDbm;
+    const rf = new Map((this.ctx?.wifi ?? []).map((a) => [a.apId, a]));
+    const seen = new Set<string>();
+    for (const ap of aps) {
+      seen.add(ap.id);
+      const color = this.apColor(ap);
+      const selected = this.store.selectedApId === ap.id;
+      const icon = L.divIcon({ className: 'bs-divicon', html: `<div class="ap-icon ${selected ? 'selected' : ''} ${ap.enabled ? '' : 'disabled'}" style="--c:${color}">${WIFI_SVG}</div>`, iconSize: [20, 20], iconAnchor: [10, 10] });
+      let m = this.apMarkers.get(ap.id);
+      if (!m) {
+        m = L.marker([ap.lat, ap.lng], { icon, draggable: true, autoPan: true, zIndexOffset: 900 });
+        m.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          this.setPlaceMode(null);
+          this.store.selectAp(ap.id);
+        });
+        m.on('drag', () => {
+          const a = this.store.ap(ap.id);
+          if (!a) return;
+          const p = m!.getLatLng();
+          a.lat = p.lat;
+          a.lng = p.lng;
+        });
+        m.on('dragend', () => this.onApMoved(ap.id));
+        m.addTo(this.wifiLayer);
+        this.apMarkers.set(ap.id, m);
+      } else {
+        m.setLatLng([ap.lat, ap.lng]);
+        m.setIcon(icon);
+      }
+      if (this.placeMode === 'wifi') m.dragging?.enable();
+      else m.dragging?.disable();
+      m.bindTooltip(`${ap.name} · ${ap.band} GHz ch ${ap.channel} · ${ap.widthMHz} MHz${ap.access === 'public' ? '' : ` · ${scn.operators.find((o) => o.id === ap.access)?.name ?? '?'} only`}`, { direction: 'top', offset: [0, -10] });
+      const r = rf.get(ap.id);
+      if (r) {
+        L.circle([ap.lat, ap.lng], { radius: wifiRangeM(r, minRssi), pane: 'sectorPane', color, weight: selected ? 2 : 1, dashArray: '4 4', fillColor: color, fillOpacity: selected ? 0.12 : 0.06, interactive: false }).addTo(this.apRange);
+      }
+    }
+    for (const [id, m] of this.apMarkers) {
+      if (!seen.has(id)) {
+        m.remove();
+        this.apMarkers.delete(id);
+      }
+    }
+  }
+
+  apColor(ap: WifiAp): string {
+    return ap.access === 'public' ? WIFI_COLOR : (this.store.scenario.operators.find((o) => o.id === ap.access)?.color ?? WIFI_COLOR);
+  }
+
+  focusAp(id: string) {
+    const ap = this.store.ap(id);
+    if (ap) this.map.panTo([ap.lat, ap.lng]);
+  }
+
   focusStation(id: string) {
     const bs = this.store.station(id);
     if (bs) this.map.panTo([bs.lat, bs.lng]);
@@ -367,7 +454,7 @@ export class MapView {
         }
         (m as UserMarker).uid = u.id;
         m.setLatLng([u.lat, u.lng]);
-        m.setStyle(userStyle(u));
+        m.setStyle(userStyle(u, engine.onWifi(u)));
       }
       this.renderSelection(engine);
       this.renderHighlights(engine);
@@ -376,7 +463,8 @@ export class MapView {
     // Links: active users → serving cell (Layers option), plus every user camped
     // on the selected station (solid = active session, dashed = idle).
     const selBs = this.store.selectedStationId;
-    if ((!lay.showLinks && !selBs) || !this.ctx || !lay.showUsers) {
+    const selAp = this.store.selectedApId;
+    if ((!lay.showLinks && !selBs && !selAp) || !this.ctx || !lay.showUsers) {
       if (this.linkLines.length) {
         this.linkLayer.clearLayers();
         this.linkLines = [];
@@ -384,21 +472,29 @@ export class MapView {
       return;
     }
     let k = 0;
+    const line = (ll: L.LatLngExpression[], style: L.PolylineOptions) => {
+      let l = this.linkLines[k];
+      if (!l) {
+        l = L.polyline(ll, { renderer: this.renderer, interactive: false });
+        l.addTo(this.linkLayer);
+        this.linkLines[k] = l;
+      } else l.setLatLngs(ll);
+      l.setStyle(style);
+      k++;
+    };
     for (const u of users) {
+      // Wi-Fi association: to the AP (solid = session over Wi-Fi, dashed = associated only).
+      const ap = u.wifiAp >= 0 ? this.ctx.wifi[u.wifiAp] : undefined;
+      const wifiCarried = engine.onWifi(u);
+      if (ap && (ap.apId === selAp || (lay.showLinks && wifiCarried))) {
+        line([[u.lat, u.lng], [ap.lat, ap.lng]], { color: WIFI_COLOR, weight: ap.apId === selAp ? 2 : 1, opacity: 0.85, dashArray: wifiCarried ? undefined : '3 4' });
+      }
       if (u.serving < 0) continue;
       const c = this.ctx.cells[u.serving];
       if (!c) continue;
       const ofSelected = c.bsId === selBs;
-      if (!ofSelected && !(lay.showLinks && u.session)) continue;
-      let line = this.linkLines[k];
-      const ll: L.LatLngExpression[] = [[u.lat, u.lng], [c.lat, c.lng]];
-      if (!line) {
-        line = L.polyline(ll, { renderer: this.renderer, interactive: false });
-        line.addTo(this.linkLayer);
-        this.linkLines[k] = line;
-      } else line.setLatLngs(ll);
-      line.setStyle({ color: c.color, weight: ofSelected ? 2 : 1, opacity: ofSelected ? 0.9 : 0.7, dashArray: ofSelected && !u.session ? '3 4' : undefined });
-      k++;
+      if (!ofSelected && !(lay.showLinks && u.session && !wifiCarried)) continue;
+      line([[u.lat, u.lng], [c.lat, c.lng]], { color: c.color, weight: ofSelected ? 2 : 1, opacity: ofSelected ? 0.9 : 0.7, dashArray: ofSelected && (!u.session || wifiCarried) ? '3 4' : undefined });
     }
     while (this.linkLines.length > k) this.linkLines.pop()!.remove();
   }

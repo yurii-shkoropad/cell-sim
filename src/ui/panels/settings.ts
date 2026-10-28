@@ -239,7 +239,11 @@ export function layersPanel(app: App): HTMLElement {
           l.showUsers = v;
           app.mapView.renderUsers(app.engine);
         }),
-        checkField('Links: active user → serving cell', () => l.showLinks, (v) => {
+        checkField('Wi-Fi APs and association range', () => l.showWifi, (v) => {
+          l.showWifi = v;
+          app.mapView.renderWifi();
+        }, 'Dashed circle: where the median RSSI equals the Wi-Fi min RSSI'),
+        checkField('Links: active user → serving cell / Wi-Fi AP', () => l.showLinks, (v) => {
           l.showLinks = v;
           app.mapView.renderUsers(app.engine);
         }),
@@ -259,6 +263,7 @@ export function layersPanel(app: App): HTMLElement {
           h('span', null, h('i', { style: 'background:#9e9e9e' }), 'idle'),
           h('span', null, h('i', { style: 'background:#1565c0' }), 'voice'),
           h('span', null, h('i', { style: 'background:#2e7d32' }), 'data'),
+          h('span', null, h('i', { style: 'background:#7b5cd6' }), 'over Wi-Fi'),
           h('span', null, h('i', { style: 'background:#000' }), 'no service'),
           h('span', null, h('i', { style: 'background:#fff;border:2px solid #222' }), 'vehicle'),
           h('span', null, h('i', { style: 'background:#fff;border:2px solid #f2b705' }), 'static'),

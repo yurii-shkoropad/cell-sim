@@ -1,7 +1,7 @@
 import { hexGrid } from '../planning/patterns';
 import { makeStation, presetByKey } from '../radio/presets';
 import { areaAround, generateUsers, mulberry32, templateFromSettings } from '../sim/population';
-import type { Operator, Scenario, Settings } from '../types';
+import type { Operator, Scenario, Settings, WifiAp, WifiSettings } from '../types';
 
 /** Lviv Polytechnic National University, main building. */
 export const DEFAULT_CENTER = { lat: 49.8356, lng: 24.0142, zoom: 15 };
@@ -54,12 +54,49 @@ export function defaultSettings(): Settings {
       neighbourRadiusM: 2000,
       seed: 1,
     },
+    wifi: defaultWifiSettings(),
     thresholds: {
       GSM: { minRxDbm: -104, a3OffsetDb: 4, hysteresisDb: 2, tttMs: 1000, b2ServingDbm: -100, qOutSinrDb: 9, rlfTimerMs: 2000, priority: 1 },
       LTE: { minRxDbm: -124, a3OffsetDb: 3, hysteresisDb: 1, tttMs: 320, b2ServingDbm: -118, qOutSinrDb: -8, rlfTimerMs: 1000, priority: 2 },
       NR: { minRxDbm: -120, a3OffsetDb: 3, hysteresisDb: 1, tttMs: 320, b2ServingDbm: -114, qOutSinrDb: -8, rlfTimerMs: 1000, priority: 3 },
     },
   };
+}
+
+export function defaultWifiSettings(): WifiSettings {
+  return {
+    enabled: true,
+    deviceShare: 0.7,
+    minRssiDbm: -75,
+    hysteresisDb: 3,
+    assocDelayMs: 2000,
+    policy: 'prefer-wifi',
+    loadThreshold: 0.7,
+    throughputMargin: 1.2,
+    maxSpeedKmh: 10,
+    voiceOverWifi: false,
+    macEfficiency: 0.65,
+    alpha: 0.75,
+    ueStreams: 2,
+    indoorSlope: 3.0,
+    outdoorSlope: 2.8,
+    shadowingSigmaDb: 4,
+  };
+}
+
+/** A few public and operator Wi-Fi APs around the Polytechnic campus for the demo. */
+export function defaultWifi(): WifiAp[] {
+  const ap = (id: string, name: string, lat: number, lng: number, o: Partial<WifiAp> = {}): WifiAp => ({
+    id, name, lat, lng, band: '5', channel: 36, widthMHz: 80, standard: 'ax', streams: 2, txPowerDbm: 23, indoor: true, maxUsers: 50, backhaulMbps: 500, access: 'public', enabled: true, ...o,
+  });
+  return [
+    ap('ap-main1', 'Main bldg Wi-Fi 1', 49.8353, 24.0138, { channel: 36 }),
+    ap('ap-main2', 'Main bldg Wi-Fi 2', 49.8350, 24.0152, { channel: 52 }),
+    ap('ap-lib', 'Library Wi-Fi', 49.8366, 24.0124, { channel: 100 }),
+    ap('ap-k5', 'Corpus 5 Wi-Fi', 49.8349, 24.0118, { channel: 149, widthMHz: 40, standard: 'ac' }),
+    ap('ap-park', 'Park hotspot', 49.8372, 24.0172, { band: '2.4', channel: 6, widthMHz: 20, standard: 'n', txPowerDbm: 20, indoor: false, backhaulMbps: 100, maxUsers: 30 }),
+    ap('ap-ks', 'Kyivstar Wi-Fi', 49.8341, 24.0160, { indoor: false, access: 'op1', txPowerDbm: 26, channel: 116, backhaulMbps: 1000 }),
+  ];
 }
 
 export function defaultOperators(): Operator[] {
@@ -96,12 +133,17 @@ export function defaultScenario(): Scenario {
     operators: defaultOperators(),
     stations: [...ksLte, ...ksGsm, ...ksNr, ...vfLte, ...lcLte],
     users: [],
+    wifi: defaultWifi(),
     settings: defaultSettings(),
   };
   // 150 users (seeded, so the demo is the same every time) plus a static probe in the main building.
   scn.users = [
-    { id: 'fu-main', name: 'Main building probe', lat: 49.8352, lng: 24.0152, operatorId: 'op1', techs: ['GSM', 'LTE', 'NR'], mobility: 'static', traffic: 'data', demandMbps: 10 },
+    { id: 'fu-main', name: 'Main building probe', lat: 49.8352, lng: 24.0152, operatorId: 'op1', techs: ['GSM', 'LTE', 'NR'], mobility: 'static', traffic: 'data', demandMbps: 10, wifi: false },
     ...generateUsers(scn, templateFromSettings(scn), areaAround(c.lat, c.lng), mulberry32(scn.settings.sim.seed)),
   ];
+  // Students sitting near the campus APs, so Wi-Fi offload shows in the demo.
+  const rnd = mulberry32(scn.settings.sim.seed + 1);
+  const tpl = { ...templateFromSettings(scn), staticShare: 1 };
+  for (const ap of scn.wifi!.slice(0, 5)) scn.users.push(...generateUsers(scn, tpl, { kind: 'circle', lat: ap.lat, lng: ap.lng, radiusM: 35 }, rnd, 8));
   return scn;
 }

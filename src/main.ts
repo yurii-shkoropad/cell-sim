@@ -13,12 +13,14 @@ import type { App } from './ui/app';
 import { button, h, selectEl, toast } from './ui/dom';
 import { fmtTime, kpiPanel } from './ui/kpiPanel';
 import { StationInspector } from './ui/stationInspector';
+import { ApInspector } from './ui/apInspector';
 import { UserInspector } from './ui/userInspector';
 import { dataPanel, planningPanel } from './ui/panels/data';
 import { helpPanel } from './ui/panels/help';
 import { networkPanel } from './ui/panels/network';
 import { layersPanel, radioPanel } from './ui/panels/settings';
 import { usersPanel } from './ui/panels/users';
+import { wifiPanel } from './ui/panels/wifi';
 
 const MAX_ROAD_AREA_KM2 = 40;
 
@@ -164,8 +166,9 @@ const app: App = {
     mapView.renderHighlights(engine);
   },
   openUser: (id) => {
-    // One inspector at a time: showing a user closes the station panel.
+    // One inspector at a time: showing a user closes the station / AP panel.
     if (store.selectedStationId) store.select(null);
+    if (store.selectedApId) store.selectAp(null);
     inspector.open(id);
   },
   onLiveTick: (fn) => liveFns.push(fn),
@@ -184,6 +187,7 @@ function rebuild() {
   engine.setScenario(store.scenario, ctx);
   mapView.setContext(ctx);
   mapView.renderStations();
+  mapView.renderWifi();
   heatmap.setContext(ctx);
 }
 
@@ -194,17 +198,23 @@ const scheduleRebuild = () => {
 };
 store.on('network', scheduleRebuild);
 store.on('settings', scheduleRebuild);
-store.on('selection', () => mapView.renderStations());
+store.on('selection', () => {
+  mapView.renderStations();
+  mapView.renderWifi();
+});
 store.on('layers', () => {
   heatmap.schedule(0);
   mapView.renderSectors();
+  mapView.renderWifi();
 });
+mapView.onApMoved = () => store.emit('network');
 mapView.onStationMoved = () => {
   store.emit('network');
   store.emit('selection');
 };
 const inspector = new UserInspector(app);
 const stationInspector = new StationInspector(app);
+const apInspector = new ApInspector(app);
 mapView.onUserClick = (id) => {
   mapView.setPlaceMode(null);
   app.openUser(id);
@@ -243,12 +253,14 @@ function applySpec(u: SimUser, spec: UserSpec, patch: Partial<UserSpec>) {
     if (spec.speedKmh != null && u.mode !== 'static') u.speed = spec.speedKmh / 3.6;
   }
   if (patch.name !== undefined) u.name = spec.name;
+  if (patch.wifi !== undefined) engine.setWifiOn(u, spec.wifi ?? engine.wifiDefault(spec.id));
 }
 
 // ---------------------------------------------------------------- tabs
 const tabs: [string, string, () => HTMLElement][] = [
   ['network', 'Network', () => networkPanel(app)],
   ['users', 'Users', () => usersPanel(app)],
+  ['wifi', 'Wi-Fi', () => wifiPanel(app)],
   ['radio', 'Radio', () => radioPanel(app)],
   ['layers', 'Layers', () => layersPanel(app)],
   ['plan', 'Planning', () => planningPanel(app)],
@@ -291,9 +303,16 @@ store.on('selection', () => {
     inspector.close();
     stationInspector.open(store.selectedStationId);
   } else stationInspector.close();
+  if (store.selectedApId) {
+    inspector.close();
+    apInspector.open(store.selectedApId);
+  } else apInspector.close();
   mapView.renderUsers(engine);
 });
-store.on('network', () => stationInspector.refresh());
+store.on('network', () => {
+  stationInspector.refresh();
+  apInspector.refresh();
+});
 
 right.appendChild(kpiPanel(app));
 

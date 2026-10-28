@@ -9,9 +9,9 @@ const MOBILITY: [Mobility, string][] = [['static', 'Static'], ['walk', 'Pedestri
 const TRAFFIC: [TrafficMode, string][] = [['random', 'Random (Poisson)'], ['data', 'Continuous data'], ['voice', 'Continuous voice'], ['idle', 'Idle']];
 const MOB_SHORT: Record<Mobility, string> = { static: 'static', walk: 'walk', drive: 'drive' };
 const TRF_SHORT: Record<TrafficMode, string> = { random: 'random', data: 'cont. data', voice: 'cont. voice', idle: 'idle' };
-type State = 'all' | 'active' | 'data' | 'voice' | 'idle' | 'none';
+type State = 'all' | 'active' | 'wifi' | 'data' | 'voice' | 'idle' | 'none';
 
-const stateOf = (u: SimUser | undefined): Exclude<State, 'all' | 'active'> => (!u || u.serving < 0 ? 'none' : u.session ? u.session.kind : 'idle');
+const stateOf = (u: SimUser | undefined): Exclude<State, 'all' | 'active' | 'wifi'> => (!u || (u.serving < 0 && !u.session) ? 'none' : u.session ? u.session.kind : 'idle');
 
 export function usersPanel(app: App): HTMLElement {
   const { store, engine, mapView } = app;
@@ -46,9 +46,11 @@ export function usersPanel(app: App): HTMLElement {
         if (filter.op !== 'all' && spec.operatorId !== filter.op) return false;
         if (filter.mob !== 'all' && spec.mobility !== filter.mob) return false;
         const st = stateOf(u);
-        if (filter.state === 'active' ? st !== 'data' && st !== 'voice' : filter.state !== 'all' && st !== filter.state) return false;
+        if (filter.state === 'wifi') {
+          if (!u || !engine.onWifi(u)) return false;
+        } else if (filter.state === 'active' ? st !== 'data' && st !== 'voice' : filter.state !== 'all' && st !== filter.state) return false;
         if (q) {
-          const cell = u && u.serving >= 0 ? ctx.cells[u.serving]?.name ?? '' : '';
+          const cell = u && engine.onWifi(u) ? ctx.wifi[u.wifiAp]?.name ?? '' : u && u.serving >= 0 ? ctx.cells[u.serving]?.name ?? '' : '';
           if (!spec.name.toLowerCase().includes(q) && !cell.toLowerCase().includes(q)) return false;
         }
         return true;
@@ -83,6 +85,7 @@ export function usersPanel(app: App): HTMLElement {
     for (const { spec, u } of rows.slice(0, MAX_ROWS)) {
       const st = stateOf(u);
       const cell = u && u.serving >= 0 ? ctx.cells[u.serving] : null;
+      const ap = u && engine.onWifi(u) ? ctx.wifi[u.wifiAp] : null;
       const cb = h('input', { type: 'checkbox', checked: selected.has(spec.id), onchange: () => {
         if (cb.checked) selected.add(spec.id);
         else selected.delete(spec.id);
@@ -99,8 +102,8 @@ export function usersPanel(app: App): HTMLElement {
           h('td', null, cb),
           h('td', { class: 'ul-name', title: `${spec.name} · ${ops.get(spec.operatorId)?.name ?? '?'} · ${spec.techs.join('/')} · traffic: ${TRF_SHORT[spec.traffic]}` }, h('span', { class: 'dot', style: `background:${ops.get(spec.operatorId)?.color ?? '#888'}` }), ' ', spec.name),
           h('td', { class: 'muted', title: `traffic: ${TRF_SHORT[spec.traffic]}` }, MOB_SHORT[spec.mobility]),
-          h('td', null, h('span', { class: `st-dot ${st === 'none' ? 'none' : st}` }), st === 'none' ? 'none' : st),
-          h('td', null, cell ? cell.name : '—'),
+          h('td', null, h('span', { class: `st-dot ${ap ? 'wifi' : st}` }), st),
+          h('td', { title: ap ? `Over Wi-Fi ${ap.name}${cell ? `, camped on ${cell.name}` : ''}` : '' }, ap ? h('span', { class: 'wifi-tag' }, ap.name) : cell ? cell.name : '—'),
           h('td', null, u?.session?.kind === 'data' ? fmt(u.thrMbps, 1) : ''),
           h('td', null, button('×', () => app.deleteUsers([spec.id]), 'icon', 'Delete user')),
         ),
@@ -132,6 +135,7 @@ export function usersPanel(app: App): HTMLElement {
         sel('Mobility', MOBILITY, (v) => apply({ mobility: v }, 'Mobility set')),
         sel('Traffic', TRAFFIC, (v) => apply({ traffic: v }, 'Traffic set')),
         sel('Phone Rx antennas', [['auto', 'Auto (device default)'], ['1', '1'], ['2', '2'], ['4', '4'], ['8', '8']], (v) => apply({ ueRx: v === 'auto' ? null : +v }, 'Rx antennas set')),
+        sel('Wi-Fi', [['auto', 'Auto (Wi-Fi device share)'], ['on', 'On'], ['off', 'Off']], (v) => apply({ wifi: v === 'auto' ? null : v === 'on' }, 'Wi-Fi set')),
         sel('Supports', [['GSM', 'GSM only'], ['GSM,LTE', 'GSM + LTE'], ['GSM,LTE,NR', 'GSM + LTE + NR']], (v) => apply({ techs: v.split(',') as typeof TECHS }, 'Devices set')),
         h('label', { class: 'field' }, h('span', { class: 'lbl' }, 'Data demand (Mbps)'), h('span', { class: 'ctl' }, demand, button('Set', () => {
           const v = parseFloat(demand.value);
@@ -349,7 +353,7 @@ export function usersPanel(app: App): HTMLElement {
             filter.mob = v;
             renderRows();
           }),
-          selectEl([['all', 'Any state'], ['active', 'Active session'], ['data', 'Data'], ['voice', 'Voice'], ['idle', 'Idle'], ['none', 'No service']] as [State, string][], () => filter.state, (v) => {
+          selectEl([['all', 'Any state'], ['active', 'Active session'], ['wifi', 'Over Wi-Fi'], ['data', 'Data'], ['voice', 'Voice'], ['idle', 'Idle'], ['none', 'No service']] as [State, string][], () => filter.state, (v) => {
             filter.state = v;
             renderRows();
           }),

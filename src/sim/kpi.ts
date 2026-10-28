@@ -1,6 +1,6 @@
-export type SimEventType = 'HO' | 'HO_IRAT' | 'HO_FAIL' | 'PING_PONG' | 'DROP' | 'BLOCK' | 'CALL_START' | 'CALL_END';
+export type SimEventType = 'HO' | 'HO_IRAT' | 'HO_FAIL' | 'PING_PONG' | 'DROP' | 'BLOCK' | 'CALL_START' | 'CALL_END' | 'WIFI_JOIN' | 'WIFI_LEAVE';
 
-export const EVENT_TYPES: SimEventType[] = ['HO', 'HO_IRAT', 'HO_FAIL', 'PING_PONG', 'DROP', 'BLOCK', 'CALL_START', 'CALL_END'];
+export const EVENT_TYPES: SimEventType[] = ['HO', 'HO_IRAT', 'HO_FAIL', 'PING_PONG', 'DROP', 'BLOCK', 'CALL_START', 'CALL_END', 'WIFI_JOIN', 'WIFI_LEAVE'];
 
 export const EVENT_LABEL: Record<SimEventType, string> = {
   HO: 'Handover',
@@ -11,6 +11,8 @@ export const EVENT_LABEL: Record<SimEventType, string> = {
   BLOCK: 'Block',
   CALL_START: 'Session start',
   CALL_END: 'Session end',
+  WIFI_JOIN: 'Wi-Fi join',
+  WIFI_LEAVE: 'Wi-Fi leave',
 };
 
 export const EVENT_COLOR: Record<SimEventType, string> = {
@@ -22,6 +24,8 @@ export const EVENT_COLOR: Record<SimEventType, string> = {
   BLOCK: '#008300',
   CALL_START: '#8a8984',
   CALL_END: '#b5b4ae',
+  WIFI_JOIN: '#7b5cd6',
+  WIFI_LEAVE: '#c9a0dc',
 };
 
 export interface SimEvent {
@@ -30,6 +34,8 @@ export interface SimEvent {
   t: number;
   type: SimEventType;
   userId: number;
+  /** Wi-Fi AP id, for Wi-Fi events. */
+  ap?: string;
   from?: string;
   to?: string;
   lat: number;
@@ -48,6 +54,9 @@ export interface KpiCounters {
   hoFail: number;
   hoIrat: number;
   pingPong: number;
+  /** Sessions moved from cellular to Wi-Fi, and back (or dropped) when Wi-Fi was lost. */
+  wifiOffloads: number;
+  wifiFallbacks: number;
 }
 
 export interface KpiSample {
@@ -68,6 +77,12 @@ export interface KpiSample {
   capacityMbps: number;
   /** RB-weighted PRB utilisation of LTE/NR cells, 0..1. */
   prbUtil: number;
+  /** Users associated to a Wi-Fi AP, and sessions carried over Wi-Fi. */
+  wifiUsers: number;
+  wifiSessions: number;
+  /** Throughput carried by Wi-Fi APs and their estimated capacity, Mbps. */
+  wifiServedMbps: number;
+  wifiCapacityMbps: number;
 }
 
 /** One second of one cell's statistics (kept per sector id). */
@@ -94,7 +109,7 @@ export const CELL_HISTORY_S = 900;
 export const TIMELINE_BUCKET_S = 10;
 
 export function emptyCounters(): KpiCounters {
-  return { voiceStarted: 0, dataStarted: 0, blockedCoverage: 0, blockedCapacity: 0, dropped: 0, hoAttempts: 0, hoSuccess: 0, hoFail: 0, hoIrat: 0, pingPong: 0 };
+  return { voiceStarted: 0, dataStarted: 0, blockedCoverage: 0, blockedCapacity: 0, dropped: 0, hoAttempts: 0, hoSuccess: 0, hoFail: 0, hoIrat: 0, pingPong: 0, wifiOffloads: 0, wifiFallbacks: 0 };
 }
 
 /** Bounded event log plus per-bucket counts for the timeline chart. */

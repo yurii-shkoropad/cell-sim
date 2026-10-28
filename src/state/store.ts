@@ -1,6 +1,6 @@
 import type { BaseStation, Scenario, Settings, Tech } from '../types';
 import { areaAround, generateUsers, mulberry32, templateFromSettings } from '../sim/population';
-import { defaultScenario, defaultSettings } from './defaults';
+import { DEFAULT_CENTER, defaultScenario, defaultSettings, defaultWifi } from './defaults';
 
 export type HeatmapKind = 'none' | 'rsrp' | 'server' | 'sinr' | 'throughput' | 'modulation' | 'condition';
 
@@ -16,6 +16,8 @@ export interface LayerState {
   showLinks: boolean;
   showRoads: boolean;
   showBuildings: boolean;
+  /** Wi-Fi APs and their association range. */
+  showWifi: boolean;
 }
 
 /** 'model': the path-loss model was switched from outside the Radio panel (it re-renders). */
@@ -39,6 +41,7 @@ export class Store {
     showLinks: false,
     showRoads: false,
     showBuildings: false,
+    showWifi: true,
   };
   private listeners = new Map<EventName, Set<Listener>>();
   private saveTimer = 0;
@@ -63,8 +66,29 @@ export class Store {
     return id ? this.scenario.stations.find((s) => s.id === id) : undefined;
   }
 
+  /** Selected Wi-Fi AP (its inspector is open); exclusive with the selected station. */
+  selectedApId: string | null = null;
+
+  ap(id: string | null) {
+    return id ? this.scenario.wifi?.find((a) => a.id === id) : undefined;
+  }
+
+  selectAp(id: string | null) {
+    this.selectedApId = id;
+    if (id) this.selectedStationId = null;
+    this.emit('selection');
+  }
+
+  removeAps(ids: Set<string>) {
+    this.scenario.wifi = (this.scenario.wifi ?? []).filter((a) => !ids.has(a.id));
+    if (this.selectedApId && ids.has(this.selectedApId)) this.selectedApId = null;
+    this.emit('network');
+    this.emit('selection');
+  }
+
   select(id: string | null) {
     this.selectedStationId = id;
+    if (id) this.selectedApId = null;
     this.emit('selection');
   }
 
@@ -116,6 +140,7 @@ export class Store {
     migrateUsers(s);
     this.scenario = s;
     this.selectedStationId = null;
+    this.selectedApId = null;
     if (!s.operators.some((o) => o.id === this.layers.operatorFilter)) this.layers.operatorFilter = 'all';
     this.emit('scenario');
     this.emit('network');
@@ -143,6 +168,7 @@ export function mergeSettings(p: Partial<Settings> | undefined): Settings {
     radio: { ...d.radio, ...p?.radio },
     users: { ...d.users, ...p?.users },
     sim: { ...d.sim, ...p?.sim },
+    wifi: { ...d.wifi, ...p?.wifi },
     thresholds: { GSM: { ...d.thresholds.GSM, ...t?.GSM }, LTE: { ...d.thresholds.LTE, ...t?.LTE }, NR: { ...d.thresholds.NR, ...t?.NR } },
   };
 }
@@ -153,6 +179,8 @@ export function mergeSettings(p: Partial<Settings> | undefined): Settings {
  * (seeded) and merge in the fixed ones.
  */
 export function migrateUsers(s: Scenario) {
+  // Scenarios saved before Wi-Fi existed: the demo area gets the demo APs, elsewhere none.
+  if (!s.wifi) s.wifi = Math.abs(s.center.lat - DEFAULT_CENTER.lat) < 0.02 && Math.abs(s.center.lng - DEFAULT_CENTER.lng) < 0.03 ? defaultWifi() : [];
   if (!s.users) {
     const generated = generateUsers(s, templateFromSettings(s), areaAround(s.center.lat, s.center.lng), mulberry32(s.settings.sim.seed));
     s.users = [...(s.fixedUsers ?? []), ...generated];

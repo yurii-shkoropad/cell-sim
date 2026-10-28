@@ -1,4 +1,5 @@
 import { LocalProjection } from '../geo';
+import { buildWifiRF, type WifiRF } from './wifi';
 import type { BaseStation, RadioSettings, Scenario, Tech } from '../types';
 import { antennaAttenuation } from './antenna';
 import { antennaType, bestRank, validAntennaFor, type RankChoice } from './mimo';
@@ -83,6 +84,8 @@ export interface RadioContext {
   lng0: number;
   /** Building-aware path maps (COST-231 WI on OSM buildings), indexed by CellRF.pathMap. */
   paths: { loss: Float32Array[]; cond: Uint8Array[]; version: number } | null;
+  /** Enabled Wi-Fi access points. */
+  wifi: WifiRF[];
 }
 
 /** Supplies a station's building path map, or null to use Hata for it. */
@@ -180,6 +183,7 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
     lat0: scn.center.lat,
     lng0: scn.center.lng,
     paths: pathLoss.length ? { loss: pathLoss, cond: pathCond, version: pathsVersion } : null,
+    wifi: buildWifiRF(scn),
   };
 }
 
