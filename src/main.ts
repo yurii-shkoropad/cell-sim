@@ -144,13 +144,14 @@ const app: App = {
     }
     usersChanged();
   },
-  saveUser: (u) => {
+  saveUser: (u, position = !u.target) => {
     const spec = u.specId ? store.scenario.users?.find((x) => x.id === u.specId) : undefined;
     if (!spec) return;
     Object.assign(spec, {
       name: u.name ?? spec.name,
-      lat: u.lat,
-      lng: u.lng,
+      lat: position ? u.lat : spec.lat,
+      lng: position ? u.lng : spec.lng,
+      target: u.target ? { lat: u.target.lat, lng: u.target.lng } : null,
       operatorId: store.scenario.operators[u.opIdx]?.id ?? spec.operatorId,
       techs: techsOf(u.techMask),
       mobility: u.mode,
@@ -215,6 +216,14 @@ mapView.onStationMoved = () => {
 const inspector = new UserInspector(app);
 const stationInspector = new StationInspector(app);
 const apInspector = new ApInspector(app);
+mapView.onPickTarget = (lat, lng) => {
+  const u = inspector.userId !== null ? engine.userById(inspector.userId) : undefined;
+  if (!u) return;
+  engine.setTarget(u, lat, lng);
+  app.saveUser(u, true); // the walk starts from here: Reset replays it
+  inspector.renderEdit();
+  mapView.renderUsers(engine);
+};
 mapView.onUserClick = (id) => {
   mapView.setPlaceMode(null);
   app.openUser(id);
@@ -254,6 +263,7 @@ function applySpec(u: SimUser, spec: UserSpec, patch: Partial<UserSpec>) {
   }
   if (patch.name !== undefined) u.name = spec.name;
   if (patch.wifi !== undefined) engine.setWifiOn(u, spec.wifi ?? engine.wifiDefault(spec.id));
+  if (patch.target !== undefined) engine.setTarget(u, spec.target?.lat ?? null, spec.target?.lng);
 }
 
 // ---------------------------------------------------------------- tabs

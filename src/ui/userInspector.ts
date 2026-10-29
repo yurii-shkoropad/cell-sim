@@ -47,6 +47,10 @@ export class UserInspector {
     container.appendChild(this.el);
     isolateFromMap(this.el);
     L.DomEvent.on(this.el, 'mousemove', L.DomEvent.stopPropagation);
+    // Keep the "Set target" button in step with the map's pick mode.
+    app.mapView.onPlaceModeChange(() => {
+      if (this.uid !== null) this.renderEdit();
+    });
   }
 
   get userId() {
@@ -66,6 +70,7 @@ export class UserInspector {
   }
 
   close() {
+    if (this.app.mapView.placeMode === 'target') this.app.mapView.setPlaceMode(null);
     this.uid = null;
     this.app.mapView.selectedUserId = null;
     this.el.style.display = 'none';
@@ -80,7 +85,7 @@ export class UserInspector {
 
   /** Called after a drag ends so the user's saved start position follows it. */
   dropped(u: SimUser) {
-    this.app.saveUser(u);
+    this.app.saveUser(u, true);
     if (u.id === this.uid) this.renderLive();
   }
 
@@ -157,6 +162,7 @@ export class UserInspector {
         after();
       })),
       row('Speed (km/h)', speed),
+      this.targetControls(u, after),
       row('Traffic', selectEl(TRAFFIC, () => u.traffic, (v) => {
         engine.setTraffic(u, v);
         after();
@@ -204,6 +210,44 @@ export class UserInspector {
       ),
       h('p', { class: 'hint' }, 'Changes are saved in the scenario. Drag the user on the map to move its start position.'),
     );
+  }
+
+  /** Pick / clear the user's destination, and replay the walk from its start position. */
+  private targetControls(u: SimUser, after: () => void): HTMLElement {
+    const { engine, mapView, store } = this.app;
+    if (u.mode === 'static') return h('div', { class: 'hint' }, 'Target: set Mobility to Pedestrian or Vehicle to send this user somewhere.');
+    const picking = mapView.placeMode === 'target';
+    const pick = button(picking ? 'Click the map…' : u.target ? 'Change target' : 'Set target on map', () => {
+      mapView.setPlaceMode(picking ? null : 'target');
+      this.renderEdit();
+    }, u.target ? '' : 'primary', 'Click a point on the map: the user goes there along the roads and stops');
+    const spec = u.specId ? store.scenario.users?.find((x) => x.id === u.specId) : undefined;
+    return h('div', { class: 'ui-target' },
+      h('div', { class: 'row' },
+        pick,
+        u.target ? button('Clear target', () => {
+          engine.setTarget(u, null);
+          after();
+        }, '', 'Back to random trips') : null,
+        u.target && spec ? button('Restart from start', () => {
+          engine.moveUserTo(u, spec.lat, spec.lng, true);
+          this.renderLive();
+          mapView.renderUsers(engine);
+        }, '', 'Put the user back at its start position and walk to the target again') : null,
+      ),
+      h('p', { class: 'hint' }, u.target
+        ? 'The walk starts where the user was when the target was set (or where you drop it). Reset and "Restart from start" replay it.'
+        : 'Send the user to a point to test handovers and Wi-Fi switching along a known path.'),
+    );
+  }
+
+  private targetRow(u: SimUser, kv: (k: string, v: string, cls?: string) => HTMLElement): HTMLElement | string {
+    if (!u.target) return '';
+    if (u.arrived) return kv('Target', 'reached · stopped');
+    if (u.mode === 'static') return kv('Target', 'set, but the user is static');
+    const left = this.app.engine.distanceToTarget(u);
+    const eta = u.speed > 0 ? ` · ETA ${fmtTime(left / u.speed)}` : '';
+    return kv('Target', `${left >= 1000 ? `${fmt(left / 1000, 2)} km` : `${Math.round(left)} m`} to go${eta}`);
   }
 
   // ---------------------------------------------------------------- live data
@@ -266,9 +310,10 @@ export class UserInspector {
       h('div', { class: 'kv-grid' },
         kv('State', state),
         c && c.pathMap >= 0 ? kv('Path', PATH_COND_LABEL[pathCondition(this.app.ctx(), c, u.x, u.y)] + ' (building model)') : '',
-        kv('Mobility', u.mode === 'static' ? 'static' : `${u.mode === 'walk' ? 'pedestrian' : 'vehicle'}, ${Math.round(u.speed * 3.6)} km/h${u.dragging ? ' (dragging)' : ''}`),
+        kv('Mobility', u.mode === 'static' ? 'static' : `${u.mode === 'walk' ? 'pedestrian' : 'vehicle'}, ${u.arrived ? 'stopped at target' : `${Math.round(u.speed * 3.6)} km/h`}${u.dragging ? ' (dragging)' : ''}`),
         kv('Device', `${techsOf(u.techMask).join(' / ')} · ${engine.ueRx(u)} Rx antenna${engine.ueRx(u) > 1 ? 's' : ''}${u.ueRxOverride === null ? '' : ' (set)'}`),
         kv('Position', `${u.lat.toFixed(5)}, ${u.lng.toFixed(5)}`),
+        this.targetRow(u, kv),
         this.wifiRow(u, kv),
         c
           ? h('div', { class: 'kv' }, h('span', null, 'Serving cell'), h('b', null,

@@ -65,7 +65,7 @@ export class MapView {
    * What a click on the empty map does: place a base station or a user, pick a
    * zone for batch-adding users (rectangle: two corners; circle: its centre), or nothing.
    */
-  placeMode: 'site' | 'user' | 'wifi' | 'zone-rect' | 'zone-circle' | null = null;
+  placeMode: 'site' | 'user' | 'wifi' | 'zone-rect' | 'zone-circle' | 'target' | null = null;
   /** Called when a zone is picked; the mode then ends. */
   onZone: (z: Zone) => void = () => {};
   /** Radius used by the circle zone preview, m. */
@@ -79,6 +79,11 @@ export class MapView {
   onAddSite: (lat: number, lng: number) => void = () => {};
   onAddUser: (lat: number, lng: number) => void = () => {};
   onAddAp: (lat: number, lng: number) => void = () => {};
+  /** Target picked for the user in the inspector; the mode then ends. */
+  onPickTarget: (lat: number, lng: number) => void = () => {};
+  /** Selected user's target and the rest of its route there. */
+  private targetLine: L.Polyline | null = null;
+  private targetMark: L.Marker | null = null;
   onApMoved: (id: string) => void = () => {};
   onStationMoved: (id: string) => void = () => {};
   onUserClick: (userId: number) => void = () => {};
@@ -124,6 +129,10 @@ export class MapView {
       if (this.placeMode === 'site') this.onAddSite(e.latlng.lat, e.latlng.lng);
       else if (this.placeMode === 'user') this.onAddUser(e.latlng.lat, e.latlng.lng);
       else if (this.placeMode === 'wifi') this.onAddAp(e.latlng.lat, e.latlng.lng);
+      else if (this.placeMode === 'target') {
+        this.setPlaceMode(null);
+        this.onPickTarget(e.latlng.lat, e.latlng.lng);
+      }
       else if (this.placeMode === 'zone-circle') {
         const c = e.latlng;
         this.setPlaceMode(null);
@@ -193,7 +202,10 @@ export class MapView {
     const title = document.createElement('b');
     const sub = document.createElement('span');
     sub.className = 'place-sub';
-    if (mode === 'zone-rect' || mode === 'zone-circle') {
+    if (mode === 'target') {
+      title.textContent = 'Click the map to set where the selected user goes';
+      sub.textContent = 'It follows the roads there and stops · Esc to cancel';
+    } else if (mode === 'zone-rect' || mode === 'zone-circle') {
       title.textContent = mode === 'zone-rect' ? 'Pick a rectangle for the new users' : `Pick the centre of a ${this.zoneRadiusM} m circle for the new users`;
       sub.textContent = mode === 'zone-rect' ? 'Click one corner, then the opposite corner · Esc to cancel' : 'Click the map · Esc to cancel';
     } else {
@@ -518,6 +530,7 @@ export class MapView {
   /** Highlight ring around the user shown in the inspector. */
   renderSelection(engine: SimEngine) {
     const u = this.selectedUserId !== null ? engine.userById(this.selectedUserId) : undefined;
+    this.renderTarget(engine, u);
     if (!u || !this.store.layers.showUsers) {
       this.selRing?.remove();
       this.selRing = null;
@@ -525,6 +538,25 @@ export class MapView {
     }
     if (!this.selRing) this.selRing = L.circleMarker([u.lat, u.lng], { renderer: this.renderer, radius: 10, weight: 2.5, color: '#000', fill: false, interactive: false }).addTo(this.userLayer);
     this.selRing.setLatLng([u.lat, u.lng]);
+  }
+
+  /** Flag at the selected user's target and a dashed line along the rest of its route. */
+  private renderTarget(engine: SimEngine, u: SimUser | undefined) {
+    if (!u?.target || !this.store.layers.showUsers) {
+      this.targetLine?.remove();
+      this.targetMark?.remove();
+      this.targetLine = this.targetMark = null;
+      return;
+    }
+    const pts = engine.targetRoute(u);
+    if (!this.targetLine) this.targetLine = L.polyline([], { color: '#000', weight: 2, opacity: 0.6, dashArray: '4 5', interactive: false }).addTo(this.map);
+    this.targetLine.setLatLngs(pts);
+    const t: L.LatLngExpression = [u.target.lat, u.target.lng];
+    if (!this.targetMark) {
+      const icon = L.divIcon({ className: 'target-divicon', html: '<div class="target-icon">⚑</div>', iconSize: [20, 20], iconAnchor: [4, 18] });
+      this.targetMark = L.marker(t, { icon, interactive: false, keyboard: false, zIndexOffset: 900 }).addTo(this.map);
+    } else this.targetMark.setLatLng(t);
+    this.targetMark.getElement()?.classList.toggle('reached', u.arrived);
   }
 
   /** Press on a user: a short press selects it, moving the mouse drags it. */

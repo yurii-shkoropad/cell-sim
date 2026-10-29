@@ -54,9 +54,13 @@ export interface SimUser {
   path: number[] | null;
   pathIdx: number;
   dwellUntil: number;
-  /** Random-waypoint target when no road graph is loaded. */
+  /** Random-waypoint target when no road graph is loaded (or the final leg to `target`). */
   wx: number;
   wy: number;
+  /** Destination set for this user: it walks/drives there along the roads and stops. */
+  target: { x: number; y: number; lat: number; lng: number } | null;
+  /** Reached `target`: stands still until the target changes or it is moved. */
+  arrived: boolean;
   serving: number;
   servingKey: string | null;
   rx: number;
@@ -338,6 +342,8 @@ export class SimEngine {
         dwellUntil: 0,
         wx: 0,
         wy: 0,
+        target: null,
+        arrived: false,
         serving: -1,
         servingKey: null,
         rx: -Infinity,
@@ -435,12 +441,19 @@ export class SimEngine {
   }
 
   private move(u: SimUser, dt: number) {
-    if (u.mode === 'static' || u.dragging || this.t < u.dwellUntil) return;
+    if (u.mode === 'static' || u.dragging || u.arrived || this.t < u.dwellUntil) return;
     let dist = u.speed * dt;
     const g = this.graph;
     if (g && u.path) {
       while (dist > 0) {
         if (u.pathIdx >= u.path.length) {
+          if (u.target) {
+            // Off the road graph for the last metres: straight to the exact target point.
+            u.path = null;
+            u.wx = u.target.x;
+            u.wy = u.target.y;
+            break;
+          }
           u.dwellUntil = this.t + (u.mode === 'walk' ? this.rng() * 30 : this.rng() * 5);
           this.newTrip(u);
           break;
@@ -467,6 +480,11 @@ export class SimEngine {
       if (d <= dist) {
         u.x = u.wx;
         u.y = u.wy;
+        if (u.target) {
+          u.arrived = true;
+          this.syncLatLng(u);
+          return;
+        }
         const w = this.randomPointInArea();
         u.wx = w.x;
         u.wy = w.y;
@@ -617,7 +635,7 @@ export class SimEngine {
   }
 
   private moving(u: SimUser): boolean {
-    return u.mode !== 'static' && !u.dragging && this.t >= u.dwellUntil;
+    return u.mode !== 'static' && !u.dragging && !u.arrived && this.t >= u.dwellUntil;
   }
 
   /**
@@ -1133,6 +1151,7 @@ export class SimEngine {
     if (f.traffic === 'data') u.nextData = this.t;
     this.users.push(u);
     this.moveUserTo(u, f.lat, f.lng, true);
+    if (f.target) this.setTarget(u, f.target.lat, f.target.lng);
     return u;
   }
 
@@ -1172,16 +1191,13 @@ export class SimEngine {
     u.x = p.x;
     u.y = p.y;
     u.dragging = !final;
-    if (final && u.mode !== 'static') {
+    if (final && u.mode !== 'static' && u.target) {
+      // Moved by hand: head for the target again from here.
+      this.routeToTarget(u);
+    } else if (final && u.mode !== 'static') {
+      const best = this.nearestNode(u, p.x, p.y);
       const g = this.graph;
-      const pool = g ? (this.effectiveMode(u) === 'walk' ? g.walk : g.drive).pool : null;
-      if (g && pool && pool.length) {
-        let best = pool[0];
-        let bd = Infinity;
-        for (const n of pool) {
-          const d = (g.x[n] - p.x) ** 2 + (g.y[n] - p.y) ** 2;
-          if (d < bd) [bd, best] = [d, n];
-        }
+      if (g && best >= 0) {
         u.x = g.x[best];
         u.y = g.y[best];
         u.path = [best];
@@ -1196,6 +1212,84 @@ export class SimEngine {
     }
     this.syncLatLng(u);
     this.refreshUser(u);
+  }
+
+  /** Nearest road node for this user's travel mode, −1 without a road graph. */
+  private nearestNode(u: SimUser, x: number, y: number): number {
+    const g = this.graph;
+    const pool = g ? (this.effectiveMode(u) === 'walk' ? g.walk : g.drive).pool : null;
+    if (!g || !pool || !pool.length) return -1;
+    let best = pool[0];
+    let bd = Infinity;
+    for (const n of pool) {
+      const d = (g.x[n] - x) ** 2 + (g.y[n] - y) ** 2;
+      if (d < bd) [bd, best] = [d, n];
+    }
+    return best;
+  }
+
+  /**
+   * Give a user a destination (null clears it and it goes back to random trips).
+   * It walks/drives there along the roads, then stops until the target changes.
+   */
+  setTarget(u: SimUser, lat: number | null, lng = 0) {
+    u.arrived = false;
+    if (lat === null) {
+      u.target = null;
+      u.path = null;
+      if (u.mode !== 'static') this.moveUserTo(u, u.lat, u.lng, true);
+      return;
+    }
+    const p = this.proj.toXY(lat, lng);
+    u.target = { x: p.x, y: p.y, lat, lng };
+    this.routeToTarget(u);
+  }
+
+  /**
+   * Route from the current position to the target: straight to the nearest road node,
+   * along the shortest road path, then straight to the target point. Without roads
+   * (or no road path) the user goes in a straight line.
+   */
+  private routeToTarget(u: SimUser) {
+    const t = u.target!;
+    u.arrived = false;
+    u.dwellUntil = 0;
+    u.path = null;
+    u.wx = t.x;
+    u.wy = t.y;
+    const g = this.graph;
+    const from = this.nearestNode(u, u.x, u.y);
+    const to = this.nearestNode(u, t.x, t.y);
+    if (g && from >= 0 && to >= 0) {
+      const p = from === to ? [from] : route(g, this.effectiveMode(u), from, to);
+      if (p && p.length) {
+        u.path = p;
+        u.pathIdx = 0;
+      }
+    }
+  }
+
+  /** Remaining distance to the target along the planned route, m (0 when arrived). */
+  distanceToTarget(u: SimUser): number {
+    if (!u.target || u.arrived) return 0;
+    return this.remainingRoute(u).reduce((sum, p, i, a) => (i ? sum + Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) : 0), 0);
+  }
+
+  /** Planned route to the target from the current position, as lat/lng points. */
+  targetRoute(u: SimUser): [number, number][] {
+    if (!u.target || u.arrived) return [];
+    return this.remainingRoute(u).map(([x, y]) => {
+      const p = this.proj.toLatLng(x, y);
+      return [p.lat, p.lng];
+    });
+  }
+
+  private remainingRoute(u: SimUser): [number, number][] {
+    const pts: [number, number][] = [[u.x, u.y]];
+    const g = this.graph;
+    if (g && u.path) for (let i = u.pathIdx; i < u.path.length; i++) pts.push([g.x[u.path[i]], g.y[u.path[i]]]);
+    pts.push([u.target!.x, u.target!.y]);
+    return pts;
   }
 
   setMobility(u: SimUser, mode: Mobility) {

@@ -25,8 +25,12 @@ export interface App {
   deleteUsers(specIds: string[]): void;
   /** Change fields of several users at once (scenario entries and live users). */
   editUsers(specIds: string[], patch: Partial<UserSpec>): void;
-  /** Save a live user's edited state back to its scenario entry. */
-  saveUser(u: SimUser): void;
+  /**
+   * Save a live user's edited state back to its scenario entry. `position`: also make its
+   * current position the start position (default: unless it is heading for a target, so
+   * Reset replays the same walk).
+   */
+  saveUser(u: SimUser, position?: boolean): void;
   /** Highlight users on the map (Users list selection). */
   setUserSelection(specIds: Iterable<string>): void;
   /** Show a user in the inspector panel. */

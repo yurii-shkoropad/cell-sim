@@ -59,6 +59,10 @@ receive antennas), mobility (static, pedestrian or vehicle), traffic and demand.
 - filters (text, operator, mobility, state), multi-select (selected users are highlighted on the map)
   and batch editing of operator, mobility, traffic, antennas, devices and demand, plus starting or
   ending sessions and deleting the selection.
+- **Target:** in the user inspector, *Set target on map* sends a pedestrian or vehicle to a point along the
+  shortest road path; it stops there. The route and a flag are drawn on the map, with the distance and ETA.
+  The target is saved, so *Reset* or *Restart from start* replays the same walk, which is handy for testing
+  handovers and Wi-Fi switching on a known path.
 - **Add users** from a template, either as a batch in the current view, in a rectangle or circle
   picked on the map, or one at a time by clicking.
 

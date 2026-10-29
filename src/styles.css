@@ -178,6 +178,9 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 }
 .ap-icon svg { width: 13px; height: 13px; }
 .ap-icon.selected { outline: 3px solid #000; outline-offset: 1px; }
+.target-divicon { background: none; border: none; }
+.target-icon { font-size: 18px; line-height: 20px; color: #c0392b; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
+.target-divicon.reached .target-icon { color: #2e7d32; }
 .ap-icon.disabled { opacity: 0.45; filter: grayscale(0.7); }
 .st-dot.wifi { background: #7b5cd6; }
 .wifi-tag { color: #7b5cd6; font-weight: 600; }

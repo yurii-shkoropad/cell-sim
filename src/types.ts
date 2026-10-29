@@ -121,6 +121,8 @@ export interface UserSpec {
   speedKmh?: number | null;
   /** Phone has Wi-Fi on; missing = decided by the Wi-Fi device share (stable per user). */
   wifi?: boolean | null;
+  /** Destination: a moving user goes there from its start position along the roads and stops. */
+  target?: { lat: number; lng: number } | null;
 }
 
 /**

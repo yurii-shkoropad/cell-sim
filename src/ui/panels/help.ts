@@ -70,7 +70,7 @@ const HTML = `
 </ul>
 
 <h4>8. Traffic & mobility</h4>
-<p>Each user has Poisson session arrivals (voice and data rates per hour) with exponentially distributed durations and data demand. Pedestrians use walkable OSM ways and vehicles use drivable ways, with one-way streets respected. Trips go to random destinations by A* shortest path, with random dwell times between them. Operators are assigned by market share, and device RAT support by the capability shares.</p>
+<p>Each user has Poisson session arrivals (voice and data rates per hour) with exponentially distributed durations and data demand. Pedestrians use walkable OSM ways and vehicles use drivable ways, with one-way streets respected. Trips go to random destinations by A* shortest path, with random dwell times between them. A user given a target (user inspector → <i>Set target on map</i>) instead takes the shortest road path there from its start position, covers the last metres off the road in a straight line, and stops. Operators are assigned by market share, and device RAT support by the capability shares.</p>
 
 <h4>9. Wi-Fi offloading</h4>
 <ul>
