@@ -83,6 +83,13 @@ const HTML = `
 <li><b>Sessions</b>: a data session (and voice with VoWiFi) of an associated phone runs over the AP and uses no cellular resources; the phone stays camped on its cell. Joining moves an ongoing cellular session to Wi-Fi. Leaving moves it back through cellular admission control, or drops it if the cell can't take it.</li>
 </ul>
 
+<h4>10. Carrier aggregation</h4>
+<ul>
+<li><b>Who:</b> LTE/NR users with a data session on cellular (voice stays on the PCell, GSM has none). The serving cell is the <b>PCell</b>; handovers, RLF and admission use it alone.</li>
+<li><b>SCells</b> (3GPP A4/A2-like): for each other carrier of the PCell's RAT and operator, the strongest cell whose RSRP is above the <i>SCell add threshold</i> and whose SINR is above Qout. With <i>Same site only</i> it must be within 50 m of the PCell (intra-eNB/gNB CA). A configured SCell is kept until 3 dB below the threshold. Up to <i>max component carriers</i> − 1 SCells, strongest first, none overlapping in frequency.</li>
+<li><b>Scheduling:</b> the user's demand is split over its carriers in proportion to what each can give it, <code>SE(SINR<sub>k</sub>) × RB<sub>k</sub> × RB width</code>; each cell schedules its share with its own scheduler. Demand a congested carrier could not serve is then moved to the carriers that served their share in full, and those cells are scheduled again. Throughput = sum over carriers.</li>
+<li>SCell users count in the cell's PRB load and served throughput, not in its admission limit. The scheduler what-if (throughput CDF comparison) counts PCells only.</li>
+</ul>
 <h4>KPI definitions</h4>
 <ul>
 <li>Drop rate = drops / admitted sessions</li>

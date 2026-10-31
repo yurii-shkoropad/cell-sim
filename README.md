@@ -75,6 +75,14 @@ airtime, served traffic, capacity, events, and every setting. The tab also sets 
 association delay, max speed, voice over Wi-Fi, the share of phones with Wi-Fi on, and the Wi-Fi
 propagation/PHY parameters. Each user can turn Wi-Fi on or off (user inspector or batch edit).
 
+**Carrier aggregation (LTE / NR):** data sessions also use secondary cells (SCells) on other carriers of
+the same RAT and operator, by default on the same site only. Settings in the **Radio** tab: on/off, max
+component carriers (2–5), SCell add threshold and same-site-only. A station's *Configure* tab has *Add
+carrier on this site*, which puts another band on the same mast with the same sector azimuths. The demo
+has an LTE 2600 (B7) layer on the seven inner Kyivstar sites next to LTE 1800. The user inspector shows each
+carrier's SINR and throughput, the station inspector shows SCell users per sector, and a KPI tile counts
+CA users and SCell traffic; SCell add/release events are in the event log (hidden by default).
+
 **Reset** restarts the simulation with the same users. Global settings cover the speed ranges,
 default antennas, and the Poisson traffic rates for users with random traffic.
 
@@ -129,6 +137,7 @@ The **Models** tab in the app has the full formulas. In short:
 | Scheduler | GBR voice first, then a selectable data scheduler: Round Robin, Proportional Fair (analytical multi-user diversity gain), Max C/I, or equal throughput (max-min); global with per-station override. GSM uses TCH timeslots (8·TRX − 2) |
 | Mobility | Idle selection by RAT priority; A3 intra-RAT and B2 inter-RAT handover with TTT; RLF via Qout + T310 |
 | Traffic | Poisson arrivals, exponential durations and demand |
+| Carrier aggregation | SCells per carrier above an RSRP threshold (A4-like, 3 dB release hysteresis), co-sited with the PCell, up to max CCs; demand split by achievable rate, then moved off congested carriers; voice on the PCell only |
 | Wi-Fi | Log-distance path loss (P.1238 style) with its own shadowing; co-channel SINR weighted by AP airtime; truncated Shannon per stream capped at the 802.11n/ac/ax top MCS, × MAC efficiency; equal-throughput airtime sharing capped by backhaul; association with min RSSI, hysteresis, delay and a speed limit; three offload policies |
 | Movement | A* routes on the OSM walk and drive graphs (one-way aware), with random destinations and dwell |
 

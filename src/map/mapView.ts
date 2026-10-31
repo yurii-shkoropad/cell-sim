@@ -31,6 +31,7 @@ function userStyle(u: SimUser, onWifi: boolean): L.CircleMarkerOptions {
   const stroke = u.mode === 'drive' ? '#222' : u.mode === 'static' ? '#f2b705' : '#fff';
   return { fillColor: fill, color: stroke, weight: u.mode === 'static' ? 2 : 1, radius: u.session ? 5 : 3.5 };
 }
+const escapeHtml = (t: string) => t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 /**
  * Keep clicks inside a floating panel from reaching the map. Leaflet's own
  * disableClickPropagation walks up from the click target at handling time, so a
@@ -234,15 +235,21 @@ export class MapView {
     const scn = this.store.scenario;
     const ops = new Map(scn.operators.map((o) => [o.id, o]));
     const seen = new Set<string>();
+    /** Same-RAT stations already drawn at a spot (extra carriers of one site), to stack their icons. */
+    const stacked = new Map<string, number>();
     for (const bs of scn.stations) {
       seen.add(bs.id);
+      const spot = `${bs.tech}:${bs.lat.toFixed(4)},${bs.lng.toFixed(4)}`;
+      const level = stacked.get(spot) ?? 0;
+      stacked.set(spot, level + 1);
       const op = ops.get(bs.operatorId);
       const color = op?.color ?? '#555';
       const selected = this.store.selectedStationId === bs.id;
-      const html = `<div class="bs-icon ${selected ? 'selected' : ''} ${bs.enabled ? '' : 'disabled'}" style="--c:${color}"><span>${TECH_SHORT[bs.tech]}</span></div>`;
-      // Nudge icons by RAT so co-located 2G/4G/5G sites stay individually clickable.
+      const html = `<div class="bs-icon ${selected ? 'selected' : ''} ${bs.enabled ? '' : 'disabled'}" style="--c:${color}" title="${escapeHtml(`${bs.name} · ${bs.band}`)}"><span>${TECH_SHORT[bs.tech]}</span></div>`;
+      // Nudge icons by RAT so co-located 2G/4G/5G sites stay individually clickable,
+      // and stack further carriers of the same RAT on the site above each other.
       const dx = bs.tech === 'GSM' ? 13 : bs.tech === 'NR' ? -13 : 0;
-      const icon = L.divIcon({ className: 'bs-divicon', html, iconSize: [22, 22], iconAnchor: [11 + dx, 11] });
+      const icon = L.divIcon({ className: 'bs-divicon', html, iconSize: [22, 22], iconAnchor: [11 + dx, 11 + 20 * level] });
       let m = this.markers.get(bs.id);
       if (!m) {
         m = L.marker([bs.lat, bs.lng], { icon, draggable: true, autoPan: true, zIndexOffset: 1000 });

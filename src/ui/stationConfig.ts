@@ -1,7 +1,7 @@
 import { verticalFootprint } from '../radio/antenna';
 import { antennaType, antennaTypesFor, bestRank, validAntennaFor } from '../radio/mimo';
 import { modulation, modulationsFor, validModulationFor } from '../radio/modulation';
-import { channelNumber, gsmTrafficChannels, makeSector, newId, PRESETS, presetByKey, rbBandwidthHz, resourceBlocks } from '../radio/presets';
+import { channelNumber, gsmTrafficChannels, makeSector, makeStation, newId, PRESETS, presetByKey, rbBandwidthHz, resourceBlocks } from '../radio/presets';
 import { validity } from '../radio/propagation';
 import { SCHEDULERS, schedulerInfo } from '../sim/scheduler';
 import type { BaseStation, Sector, Tech } from '../types';
@@ -224,6 +224,7 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
     hoTable(app, bs, changed),
     h('h4', null, 'Vertical beam (side view)'),
     profileHost,
+    bs.tech === 'GSM' ? '' : addCarrierRow(app, bs),
     h('div', { class: 'row' },
       button('Duplicate', () => {
         const copy: BaseStation = JSON.parse(JSON.stringify(bs));
@@ -244,6 +245,38 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
  * Per-sector A3 parameters. Empty = the global value for the RAT (Radio → thresholds),
  * shown as the placeholder.
  */
+/**
+ * Another carrier of the same RAT on this site: a new station at the same position with
+ * the same sector azimuths, beamwidths, tilts and PCIs, on the chosen band. With carrier
+ * aggregation on, users can aggregate the two.
+ */
+function addCarrierRow(app: App, bs: BaseStation): HTMLElement {
+  const { store } = app;
+  const onSite = store.scenario.stations.filter((x) => x.tech === bs.tech && x.operatorId === bs.operatorId && Math.abs(x.lat - bs.lat) < 1e-4 && Math.abs(x.lng - bs.lng) < 1e-4);
+  const options = PRESETS.filter((p) => p.tech === bs.tech && !onSite.some((x) => x.band === p.band));
+  if (!options.length) return h('p', { class: 'hint' }, 'Every band of this RAT is already on this site.');
+  let key = options[0].key;
+  return h('div', null,
+    h('h4', null, 'Carriers on this site'),
+    h('p', { class: 'hint' }, `${onSite.map((x) => x.band).join(' + ')} now. Add another band for carrier aggregation (Radio → Carrier aggregation).`),
+    h('div', { class: 'row' },
+      selectEl(options.map((p) => [p.key, p.label] as [string, string]), () => key, (v) => (key = v)),
+      button('Add carrier on this site', () => {
+        const p = presetByKey(key);
+        const st = makeStation(p, bs.lat, bs.lng, bs.operatorId, `${bs.name}-${p.band}`, { sectors: bs.sectors.length });
+        st.heightM = bs.heightM;
+        st.sectors.forEach((x, i) => {
+          const src = bs.sectors[i];
+          Object.assign(x, { azimuth: src.azimuth, hBeamwidth: src.hBeamwidth, pci: src.pci, enabled: src.enabled });
+          if (src.hBeamwidth >= 360) x.gain = src.gain;
+        });
+        store.addStations([st]);
+        store.select(st.id);
+      }, '', 'New station at the same position and sector azimuths, on the chosen band'),
+    ),
+  );
+}
+
 function hoTable(app: App, bs: BaseStation, changed: () => void): HTMLElement {
   const th = app.store.scenario.settings.thresholds[bs.tech];
   const cols: { key: 'hysteresisDb' | 'a3OffsetDb' | 'tttMs' | 'cioDb'; label: string; def: number; step: number; min: number; max: number; title: string }[] = [

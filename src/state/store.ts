@@ -169,6 +169,7 @@ export function mergeSettings(p: Partial<Settings> | undefined): Settings {
     users: { ...d.users, ...p?.users },
     sim: { ...d.sim, ...p?.sim },
     wifi: { ...d.wifi, ...p?.wifi },
+    ca: { ...d.ca, ...p?.ca },
     thresholds: { GSM: { ...d.thresholds.GSM, ...t?.GSM }, LTE: { ...d.thresholds.LTE, ...t?.LTE }, NR: { ...d.thresholds.NR, ...t?.NR } },
   };
 }

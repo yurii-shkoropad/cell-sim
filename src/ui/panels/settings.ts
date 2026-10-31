@@ -1,6 +1,6 @@
 import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { BUILDING_LEGEND } from '../../map/mapView';
-import { TECHS, type Tech, type TechThresholds } from '../../types';
+import { TECHS, type CaSettings, type Tech, type TechThresholds } from '../../types';
 import type { App } from '../app';
 import { button, checkField, clear, h, numField, section, selectField } from '../dom';
 
@@ -95,6 +95,7 @@ export function radioPanel(app: App): HTMLElement {
           set();
         }, { min: 0, max: 1, step: 0.05, title: 'Capacity added by each extra co-scheduled user on massive-MIMO / 8T8R cells' }),
       ),
+      caSection(store.scenario.settings.ca, set, render),
       section('Mobility management thresholds', thresholdTable(store.scenario.settings.thresholds, set)),
       section('Simulation',
         numField('Time step', () => s.stepMs, (v) => {
@@ -183,6 +184,34 @@ function thresholdTable(th: Record<Tech, TechThresholds>, changed: () => void): 
         return input;
       }),
     ]),
+  );
+}
+
+/** Carrier aggregation: SCells on other carriers of the same site for LTE/NR data sessions. */
+function caSection(ca: CaSettings, set: () => void, render: () => void): HTMLElement {
+  return section('Carrier aggregation (LTE / NR)',
+    checkField('Carrier aggregation', () => ca.enabled, (v) => {
+      ca.enabled = v;
+      set();
+      render();
+    }, 'Data sessions also use secondary cells (SCells) on other carriers of the same RAT and operator'),
+    ca.enabled
+      ? h('div', null,
+          selectField('Max component carriers', ['2', '3', '4', '5'].map((n) => [n, `${n} CC (PCell + ${+n - 1} SCell${+n > 2 ? 's' : ''})`] as [string, string]), () => String(ca.maxCc), (v) => {
+            ca.maxCc = +v;
+            set();
+          }, 'Carriers a phone can aggregate (UE category / band combination)'),
+          numField('SCell add threshold', () => ca.scellMinDbm, (v) => {
+            ca.scellMinDbm = v;
+            set();
+          }, { min: -140, max: -60, step: 1, unit: 'dBm', title: 'RSRP needed to configure an SCell (A4-like); it is released 3 dB lower' }),
+          checkField('Same site only', () => ca.coSitedOnly, (v) => {
+            ca.coSitedOnly = v;
+            set();
+          }, 'Intra-eNB/gNB CA: SCells must be on the PCell’s site (within 50 m). Off: any cell of the operator (inter-site CA)'),
+        )
+      : '',
+    h('p', { class: 'hint' }, 'Voice stays on the PCell. A data session’s demand is shared over the carriers in proportion to their rate, and moved to a carrier with room when one is congested. Add carriers to a site with Configure → “Add carrier on this site”.'),
   );
 }
 

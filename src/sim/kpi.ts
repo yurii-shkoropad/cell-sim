@@ -1,6 +1,6 @@
-export type SimEventType = 'HO' | 'HO_IRAT' | 'HO_FAIL' | 'PING_PONG' | 'DROP' | 'BLOCK' | 'CALL_START' | 'CALL_END' | 'WIFI_JOIN' | 'WIFI_LEAVE';
+export type SimEventType = 'HO' | 'HO_IRAT' | 'HO_FAIL' | 'PING_PONG' | 'DROP' | 'BLOCK' | 'CALL_START' | 'CALL_END' | 'WIFI_JOIN' | 'WIFI_LEAVE' | 'SCELL_ADD' | 'SCELL_REMOVE';
 
-export const EVENT_TYPES: SimEventType[] = ['HO', 'HO_IRAT', 'HO_FAIL', 'PING_PONG', 'DROP', 'BLOCK', 'CALL_START', 'CALL_END', 'WIFI_JOIN', 'WIFI_LEAVE'];
+export const EVENT_TYPES: SimEventType[] = ['HO', 'HO_IRAT', 'HO_FAIL', 'PING_PONG', 'DROP', 'BLOCK', 'CALL_START', 'CALL_END', 'WIFI_JOIN', 'WIFI_LEAVE', 'SCELL_ADD', 'SCELL_REMOVE'];
 
 export const EVENT_LABEL: Record<SimEventType, string> = {
   HO: 'Handover',
@@ -13,6 +13,8 @@ export const EVENT_LABEL: Record<SimEventType, string> = {
   CALL_END: 'Session end',
   WIFI_JOIN: 'Wi-Fi join',
   WIFI_LEAVE: 'Wi-Fi leave',
+  SCELL_ADD: 'SCell add',
+  SCELL_REMOVE: 'SCell release',
 };
 
 export const EVENT_COLOR: Record<SimEventType, string> = {
@@ -26,6 +28,8 @@ export const EVENT_COLOR: Record<SimEventType, string> = {
   CALL_END: '#b5b4ae',
   WIFI_JOIN: '#7b5cd6',
   WIFI_LEAVE: '#c9a0dc',
+  SCELL_ADD: '#0f8b8d',
+  SCELL_REMOVE: '#8fcfd0',
 };
 
 export interface SimEvent {
@@ -83,6 +87,9 @@ export interface KpiSample {
   /** Throughput carried by Wi-Fi APs and their estimated capacity, Mbps. */
   wifiServedMbps: number;
   wifiCapacityMbps: number;
+  /** Data users with at least one secondary cell, and the throughput their SCells carry, Mbps. */
+  caUsers: number;
+  scellMbps: number;
 }
 
 /** One second of one cell's statistics (kept per sector id). */

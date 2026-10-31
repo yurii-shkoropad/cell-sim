@@ -66,6 +66,7 @@ describe('schedulers in the simulation', () => {
   function run(sched: SchedulerKey) {
     const scn = JSON.parse(base) as ReturnType<typeof defaultScenario>;
     scn.settings.radio.scheduler = sched;
+    scn.settings.ca.enabled = false; // per-cell scheduler behaviour, one carrier per user
     scn.users = generateUsers(scn, { ...templateFromSettings(scn), count: 120, staticShare: 1 }, areaAround(scn.center.lat, scn.center.lng), mulberry32(3));
     const c = scn.center;
     const eng = new SimEngine(scn, buildRadioContext(scn), { south: c.lat - 0.005, north: c.lat + 0.005, west: c.lng - 0.007, east: c.lng + 0.007 });
@@ -100,6 +101,7 @@ describe('schedulers in the simulation', () => {
 describe('compareSchedulers what-if', () => {
   it('matches the live allocation for the scheduler in use and ranks the others as expected', () => {
     const scn = defaultScenario();
+    scn.settings.ca.enabled = false; // the what-if counts PCells only
     scn.users = generateUsers(scn, { ...templateFromSettings(scn), count: 200, staticShare: 1 }, areaAround(scn.center.lat, scn.center.lng), mulberry32(5));
     const c = scn.center;
     const eng = new SimEngine(scn, buildRadioContext(scn), { south: c.lat - 0.005, north: c.lat + 0.005, west: c.lng - 0.007, east: c.lng + 0.007 });

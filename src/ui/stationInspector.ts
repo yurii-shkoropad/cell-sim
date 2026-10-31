@@ -164,6 +164,11 @@ export class StationInspector {
         kv('Served DL', data.length ? `${fmt(served, 1)} of ${fmt(demand, 1)} Mbps (${Math.round((100 * served) / Math.max(demand, 1e-9))}%)` : '—'),
         kv('Mean SINR', sinrs.length ? `${fmt(sinrs.reduce((a, b) => a + b, 0) / sinrs.length)} dB` : '—'),
         kv('Cell-edge users', `${edge} with SINR < 0 dB`, edge ? 'bad' : ''),
+        (() => {
+          const withSc = data.filter((u) => u.scells.length).length;
+          const asSc = sum((s) => s.scellUsers);
+          return withSc || asSc ? kv('Carrier aggregation', `${withSc} of its data users with SCells · ${asSc} using it as SCell`) : '';
+        })(),
         kv('Handovers', `${sum((s) => s.hoIn)} in · ${sum((s) => s.hoOut)} out`),
         kv('Drops / blocks', `${sum((s) => s.drops)} / ${sum((s) => s.blocks)}`, sum((s) => s.drops + s.blocks) ? 'bad' : ''),
       ),
@@ -175,7 +180,6 @@ export class StationInspector {
       const sec = bs.sectors[x.s];
       const su = users.filter((u) => u.serving === x.idx);
       const sa = su.filter((u) => u.session);
-      const sThr = sa.reduce((a, u) => a + (u.session!.kind === 'data' ? u.thrMbps : 0), 0);
       const sSinr = su.map((u) => u.sinr).filter(Number.isFinite);
       const pct = Math.round(x.st.load * 100);
       const cap = x.c.tech === 'GSM' ? `${x.st.tchUsed}/${x.c.tch} TCH` : `${fmt(x.st.usedRb, 0)}/${x.c.rbs} RB`;
@@ -189,7 +193,8 @@ export class StationInspector {
           h('div', { class: 'si-bar', title: 'PRB / TCH utilisation' }, h('i', { style: `width:${Math.min(100, pct)}%;background:${pct >= 90 ? '#c0392b' : pct >= 70 ? '#eda100' : '#2a78d6'}` }), h('span', null, `${pct}% · ${cap}`)),
           h('div', { class: 'si-stats' },
             h('span', null, `${sa.length} active / ${su.length} camped`),
-            x.c.tech === 'GSM' ? null : h('span', null, `${fmt(sThr, 1)} Mbps`),
+            x.c.tech === 'GSM' ? null : h('span', { title: 'DL throughput this cell carries (incl. as SCell)' }, `${fmt(x.st.servedMbps, 1)} Mbps`),
+            x.st.scellUsers ? h('span', { title: 'Users aggregating this cell as a secondary carrier' }, `+${x.st.scellUsers} as SCell`) : null,
             h('span', null, `SINR ${sSinr.length ? fmt(sSinr.reduce((a, b) => a + b, 0) / sSinr.length) : '—'} dB`),
             x.st.muGain > 1.001 ? h('span', { title: 'MU-MIMO capacity multiplier' }, `MU ×${fmt(x.st.muGain, 1)}`) : null,
             h('span', { title: 'handovers in / out' }, `HO ${x.st.hoIn}↓ ${x.st.hoOut}↑`),

@@ -241,6 +241,17 @@ export class UserInspector {
     );
   }
 
+  /** Carrier aggregation: PCell + SCells with what each carries. */
+  private caRow(u: SimUser, kv: (k: string, v: string, cls?: string) => HTMLElement): HTMLElement | string {
+    const ca = this.app.store.scenario.settings.ca;
+    const ctx = this.app.ctx();
+    if (!ca.enabled || u.serving < 0 || ctx.cells[u.serving].tech === 'GSM') return '';
+    if (!u.scells.length) return kv('Carrier aggr.', u.session?.kind === 'data' && !this.app.engine.onWifi(u) ? 'PCell only (no other carrier above the SCell threshold)' : 'data sessions only');
+    const scThr = u.scellThr.reduce((a, b) => a + b, 0);
+    const parts = u.scells.map((i, k) => `${ctx.cells[i].name} ${ctx.cells[i].freqMHz} MHz, SINR ${fmt(u.scellSinr[k], 1)} dB, ${fmt(u.scellThr[k], 1)} Mbps`);
+    return kv('Carrier aggr.', `${1 + u.scells.length} CC · PCell ${fmt(u.thrMbps - scThr, 1)} Mbps + ${parts.join(' + ')}`);
+  }
+
   private targetRow(u: SimUser, kv: (k: string, v: string, cls?: string) => HTMLElement): HTMLElement | string {
     if (!u.target) return '';
     if (u.arrived) return kv('Target', 'reached · stopped');
@@ -336,6 +347,7 @@ export class UserInspector {
           return `${m ? m.label : 'none (SINR too low)'}${cap}`;
         })() : '—'),
         kv('Carrier', c ? (c.tech === 'GSM' ? `${c.freqMHz} MHz · 200 kHz · ${c.tch} TCH` : `${c.freqMHz} MHz · ${c.rbs} RB (${fmt(c.occBwMHz, 1)} MHz used)`) : '—'),
+        this.caRow(u, kv),
         kv('Scheduler', c && c.tech !== 'GSM' ? `${schedulerInfo(engine.cellScheduler(u.serving))?.label} · cell load ${Math.round(engine.cells[u.serving].load * 100)}%` : '—'),
         kv('Max possible', c ? maxPossible(c, engine.ueRx(u), store.scenario.settings.radio.overhead) : '—'),
         kv('Peak here', c && c.tech !== 'GSM' ? `${fmt(peakRateMbps(c, u.sinr, store.scenario.settings.radio, engine.ueRx(u)), 1)} Mbps (alone in the cell)` : '—'),

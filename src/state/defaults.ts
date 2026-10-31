@@ -55,6 +55,7 @@ export function defaultSettings(): Settings {
       seed: 1,
     },
     wifi: defaultWifiSettings(),
+    ca: { enabled: true, maxCc: 3, scellMinDbm: -115, coSitedOnly: true },
     thresholds: {
       GSM: { minRxDbm: -104, a3OffsetDb: 4, hysteresisDb: 2, tttMs: 1000, b2ServingDbm: -100, qOutSinrDb: 9, rlfTimerMs: 2000, priority: 1 },
       LTE: { minRxDbm: -124, a3OffsetDb: 3, hysteresisDb: 1, tttMs: 320, b2ServingDbm: -118, qOutSinrDb: -8, rlfTimerMs: 1000, priority: 2 },
@@ -115,6 +116,9 @@ export function defaultScenario(): Scenario {
 
   const ksLte = hexGrid({ centerLat: c.lat, centerLng: c.lng, isdM: 750, rings: 2, sectors: 3, azimuthOffset: 30, operatorId: 'op1', preset: lte1800, namePrefix: 'KS-L' });
 
+  // Capacity layer on the inner seven sites, same antennas' azimuths: carrier aggregation 1800 + 2600.
+  const ksL2600 = hexGrid({ centerLat: c.lat, centerLng: c.lng, isdM: 750, rings: 1, sectors: 3, azimuthOffset: 30, operatorId: 'op1', preset: presetByKey('lte2600'), namePrefix: 'KS-L7-', pciStart: 300 });
+
   const ksGsm = hexGrid({ centerLat: c.lat, centerLng: c.lng, isdM: 1300, rings: 1, sectors: 3, azimuthOffset: 0, operatorId: 'op1', preset: gsm900, namePrefix: 'KS-G' }).slice(0, 4);
   // 4/12 reuse on four GSM sites: give each sector its own BCCH.
   ksGsm.forEach((bs, i) => bs.sectors.forEach((s, j) => (s.freqMHz = +(947.4 + 0.4 * (i * 3 + j)).toFixed(1))));
@@ -131,7 +135,7 @@ export function defaultScenario(): Scenario {
     name: 'Lviv Polytechnic demo',
     center: { ...c },
     operators: defaultOperators(),
-    stations: [...ksLte, ...ksGsm, ...ksNr, ...vfLte, ...lcLte],
+    stations: [...ksLte, ...ksL2600, ...ksGsm, ...ksNr, ...vfLte, ...lcLte],
     users: [],
     wifi: defaultWifi(),
     settings: defaultSettings(),

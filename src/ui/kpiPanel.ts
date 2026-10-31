@@ -155,7 +155,7 @@ export function kpiPanel(app: App): HTMLElement {
 
   const logList = h('div', { class: 'log-list' });
   const logTitle = h('div', { class: 'chart-title' }, 'Event log (newest first, click to locate)');
-  const enabled = new Set<SimEventType>(EVENT_TYPES.filter((t) => t !== 'CALL_START' && t !== 'CALL_END'));
+  const enabled = new Set<SimEventType>(EVENT_TYPES.filter((t) => t !== 'CALL_START' && t !== 'CALL_END' && t !== 'SCELL_ADD' && t !== 'SCELL_REMOVE'));
   const chips = h('div', { class: 'chips' },
     ...EVENT_TYPES.map((t) => {
       const chip = h('button', { type: 'button', class: `chip ${enabled.has(t) ? 'on' : ''}`, style: `--c:${EVENT_COLOR[t]}`, onclick: () => {
@@ -404,6 +404,9 @@ export function kpiPanel(app: App): HTMLElement {
         tile('PRB utilisation', last ? pct0(last.util) : '—', 'LTE/NR, RB-weighted'),
         tile('Throughput used', last && last.capacity ? pct0(last.served / last.capacity) : '—', last ? `${fmtMbps(last.served)} of ${fmtMbps(last.capacity)}` : '', 'Served DL ÷ estimated capacity of all cells'),
       );
+      if (store.scenario.settings.ca.enabled) {
+        tiles.append(tile('Carrier aggregation', s ? `${s.caUsers ?? 0} users` : '—', s ? `${fmtMbps(s.scellMbps ?? 0)} on SCells${last && last.served > 0 ? ` (${pct0((s.scellMbps ?? 0) / last.served)})` : ''}` : '', 'Data users with at least one secondary cell, and the DL throughput their SCells carry'));
+      }
       if (store.scenario.settings.wifi.enabled && (store.scenario.wifi ?? []).length) {
         const w = last?.wifi ?? 0;
         tiles.append(

@@ -19,6 +19,18 @@ const VOICE_GBR_MBPS = 0.03;
 const GBR_ADMISSION_LIMIT = 0.9;
 /** Idle-mode reselection hysteresis, dB. */
 const RESELECT_HYST_DB = 2;
+/** Cells within this distance of the PCell count as the same site for carrier aggregation, m. */
+const CA_COSITE_M = 50;
+/** A configured SCell is released this much below the add threshold, dB. */
+const CA_RELEASE_HYST_DB = 3;
+
+/** One user's traffic on one cell for the scheduler: the PCell, or one SCell of a CA user. */
+interface CellLoad {
+  u: SimUser;
+  sinr: number;
+  voice: boolean;
+  demandMbps: number;
+}
 
 export type SessionKind = 'voice' | 'data';
 
@@ -86,6 +98,10 @@ export interface SimUser {
   /** Candidate AP and how long the join condition has held, ms. */
   wifiCand: number;
   wifiTimerMs: number;
+  /** Carrier aggregation: secondary cells (indices into ctx.cells), their SINR and throughput. */
+  scells: number[];
+  scellSinr: number[];
+  scellThr: number[];
 }
 
 /** Live statistics of one Wi-Fi AP. */
@@ -136,6 +152,8 @@ export interface CellState {
   capacityMbps: number;
   /** Sessions admitted on this cell (new sessions, not handovers). */
   started: number;
+  /** Data users using this cell as a carrier-aggregation SCell. */
+  scellUsers: number;
 }
 
 /**
@@ -238,7 +256,7 @@ export class SimEngine {
     const prevLoads = this.loads;
     const prevCells = this.cells;
     const keyToNew = new Map(ctx.cells.map((_, i) => [cellKey(ctx, i), i]));
-    this.cells = ctx.cells.map(() => ({ active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0, servedMbps: 0, demandMbps: 0, capacityMbps: 0, started: 0 }));
+    this.cells = ctx.cells.map(() => ({ active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0, servedMbps: 0, demandMbps: 0, capacityMbps: 0, started: 0, scellUsers: 0 }));
     this.loads = new Float32Array(C).fill(this.initialLoad());
     if (old) {
       old.cells.forEach((_, i) => {
@@ -271,6 +289,7 @@ export class SimEngine {
       if (na === undefined) u.wifiApId = null;
       u.wifiCand = -1;
       u.wifiTimerMs = 0;
+      this.clearScells(u); // cell indices changed; re-selected on the next step
     }
     // Users without their own Wi-Fi setting follow the (possibly changed) device share.
     const specs = new Map((scn.users ?? []).map((f) => [f.id, f]));
@@ -299,7 +318,7 @@ export class SimEngine {
     this.log.clear();
     this.nextSampleT = 0;
     this.rng = mulberry32(this.settings.sim.seed);
-    for (const c of this.cells) Object.assign(c, { active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0, servedMbps: 0, demandMbps: 0, capacityMbps: 0, started: 0 });
+    for (const c of this.cells) Object.assign(c, { active: 0, camped: 0, usedRb: 0, gbrRb: 0, tchUsed: 0, load: 0, muGain: 1, scheduler: 'rr' as SchedulerKey, hoIn: 0, hoOut: 0, drops: 0, blocks: 0, servedMbps: 0, demandMbps: 0, capacityMbps: 0, started: 0, scellUsers: 0 });
     this.aps = this.ctx.wifi.map(() => emptyAp());
     this.apActivity.fill(0.05);
     this.loads.fill(this.initialLoad());
@@ -365,6 +384,9 @@ export class SimEngine {
         wifiSinr: -Infinity,
         wifiCand: -1,
         wifiTimerMs: 0,
+        scells: [],
+        scellSinr: [],
+        scellThr: [],
       };
   }
 
@@ -926,6 +948,63 @@ export class SimEngine {
     u.nextData = u.traffic === 'data' ? this.t + retryS : this.t + this.expo(3600 / Math.max(us.dataSessionsPerHour, 1e-6));
   }
 
+  // ---------------------------------------------------------------- carrier aggregation
+
+  /** CA is possible for this user right now: LTE/NR data session on cellular. */
+  private caEligible(u: SimUser): boolean {
+    const ca = this.settings.ca;
+    return ca.enabled && ca.maxCc > 1 && u.serving >= 0 && u.session?.kind === 'data' && !this.onWifi(u) && this.ctx.cells[u.serving].tech !== 'GSM';
+  }
+
+  private clearScells(u: SimUser) {
+    if (!u.scells.length) return;
+    u.scells = [];
+    u.scellSinr = [];
+    u.scellThr = [];
+  }
+
+  /**
+   * SCell configuration (3GPP A4/A2-like): for each other carrier of the PCell's RAT,
+   * the strongest cell (co-sited with the PCell unless that limit is off) above the add
+   * threshold with usable SINR; configured SCells stay until 3 dB below it. Up to
+   * maxCc − 1 carriers, strongest first, none overlapping the PCell or each other.
+   */
+  private caStep(u: SimUser) {
+    if (!this.caEligible(u)) {
+      this.clearScells(u);
+      return;
+    }
+    const ca = this.settings.ca;
+    const pc = this.ctx.cells[u.serving];
+    const qOut = this.settings.thresholds[pc.tech].qOutSinrDb;
+    const cand: { i: number; lvl: number; score: number }[] = [];
+    for (const i of this.candidateCells(u)) {
+      const c = this.ctx.cells[i];
+      if (i === u.serving || c.tech !== pc.tech || (c.fLo < pc.fHi && c.fHi > pc.fLo)) continue;
+      if (ca.coSitedOnly && Math.hypot(c.x - pc.x, c.y - pc.y) > CA_COSITE_M) continue;
+      const kept = u.scells.includes(i);
+      const lvl = this.level(i, u.x, u.y);
+      if (lvl < ca.scellMinDbm - (kept ? CA_RELEASE_HYST_DB : 0)) continue;
+      // Configured SCells get the hysteresis as a bonus, so they are not swapped on every dB.
+      cand.push({ i, lvl, score: lvl + (kept ? CA_RELEASE_HYST_DB : 0) });
+    }
+    cand.sort((a, b) => b.score - a.score);
+    const picked: number[] = [];
+    for (const k of cand) {
+      if (picked.length >= ca.maxCc - 1) break;
+      const c = this.ctx.cells[k.i];
+      if (picked.some((j) => this.ctx.cells[j].fLo < c.fHi && this.ctx.cells[j].fHi > c.fLo)) continue; // one cell per carrier
+      if (this.sinrAt(k.i, u.x, u.y) < qOut) continue;
+      picked.push(k.i);
+    }
+    for (const i of u.scells) if (!picked.includes(i)) this.emit('SCELL_REMOVE', u, `${this.ctx.cells[i].freqMHz} MHz released`, u.serving, i);
+    for (const i of picked) if (!u.scells.includes(i)) this.emit('SCELL_ADD', u, `${this.ctx.cells[i].freqMHz} MHz, ${this.level(i, u.x, u.y).toFixed(0)} dBm`, u.serving, i);
+    const old = new Map(u.scells.map((i, k) => [i, u.scellThr[k]]));
+    u.scells = picked;
+    u.scellSinr = picked.map((i) => this.sinrAt(i, u.x, u.y));
+    u.scellThr = picked.map((i) => old.get(i) ?? 0);
+  }
+
   private tryHandover(u: SimUser, target: number, irat: boolean) {
     const from = u.serving;
     this.counters.hoAttempts++;
@@ -1062,6 +1141,7 @@ export class SimEngine {
         u.hoCand = -1;
         u.hoTimerMs = Math.min(u.hoTimerMs + dtMs, 0);
       }
+      this.caStep(u);
     }
 
     this.schedule();
@@ -1378,7 +1458,7 @@ export class SimEngine {
    * Pure: reads the users' current SINR and demand, changes nothing, so it also
    * serves what-if comparisons on the same snapshot.
    */
-  private allocateCell(i: number, sched: SchedulerKey, list: SimUser[], demandOverrideMbps?: number) {
+  private allocateCell(i: number, sched: SchedulerKey, list: CellLoad[], demandOverrideMbps?: number) {
     const r = this.settings.radio;
     const c = this.ctx.cells[i];
     const thr = new Float64Array(list.length);
@@ -1388,29 +1468,29 @@ export class SimEngine {
     const data: { k: number; rate: number; need: number }[] = [];
     const voiceRates: number[] = [];
     const rbMbps = (c.rbBwHz * (1 - r.overhead)) / 1e6;
-    list.forEach((u, k) => {
-      const link = linkRank(c, u.sinr, this.ueRx(u), r);
+    list.forEach((l, k) => {
+      const link = linkRank(c, l.sinr, this.ueRx(l.u), r);
       const rate = link.se * rbMbps;
       rank[k] = rate > 0 ? link.rank : 0;
       if (rate <= 0) return;
-      if (u.session!.kind === 'voice') {
+      if (l.voice) {
         const need = Math.min(VOICE_GBR_MBPS / rate, free);
         free -= need;
         gbr += need;
         thr[k] = need * rate;
         voiceRates.push(rate);
-      } else data.push({ k, rate, need: (demandOverrideMbps ?? u.session!.demandMbps) / rate });
+      } else data.push({ k, rate, need: (demandOverrideMbps ?? l.demandMbps) / rate });
     });
     // Channel-aware schedulers (PF, Max C/I) serve users near their fading peaks,
     // raising the rate during their share (multi-user diversity, grows with users).
     if ((sched === 'pf' || sched === 'maxci') && data.length > 1) {
       const g = pfDiversityGainDb(data.length, r.pfDiversityEfficiency);
       for (const d of data) {
-        const u = list[d.k];
-        const boosted = linkRank(c, u.sinr + g, this.ueRx(u), r);
+        const l = list[d.k];
+        const boosted = linkRank(c, l.sinr + g, this.ueRx(l.u), r);
         d.rate = boosted.se * rbMbps;
         rank[d.k] = boosted.rank;
-        d.need = (demandOverrideMbps ?? u.session!.demandMbps) / d.rate;
+        d.need = (demandOverrideMbps ?? l.demandMbps) / d.rate;
       }
     }
     // MU-MIMO: co-scheduled data users reuse the same RBs, so the data pool grows
@@ -1441,7 +1521,8 @@ export class SimEngine {
    * What-if on the current snapshot: the DL throughput every active LTE/NR data user
    * would get if all LTE/NR cells used each scheduler, with demand and per-cell
    * fairness. Same users, positions, SINR and demands for every scheduler. GSM users
-   * are left out: they get a fixed GPRS timeslot whatever the scheduler.
+   * are left out: they get a fixed GPRS timeslot whatever the scheduler. Each user is
+   * counted on its PCell only (no carrier aggregation), so cells compare like for like.
    *
    * `fullBuffer`: every data user wants as much as it can get (standard scheduler
    * comparison). Otherwise uncongested cells serve every demand in full and all
@@ -1463,7 +1544,7 @@ export class SimEngine {
       for (let i = 0; i < C; i++) {
         const list = perCell[i];
         if (!list.length) continue;
-        const a = this.allocateCell(i, sched, list, fullBuffer ? Infinity : undefined);
+        const a = this.allocateCell(i, sched, list.map((u) => this.pcellLoad(u)), fullBuffer ? Infinity : undefined);
         list.forEach((u, k) => {
           if (u.session!.kind !== 'data') return;
           const t = a.thr[k];
@@ -1478,52 +1559,111 @@ export class SimEngine {
     return Object.assign(out, { demand: fullBuffer ? [] : demand });
   }
 
-  /** Resource allocation: GBR voice first, then max-min fair water-filling for data. */
+  private pcellLoad(u: SimUser): CellLoad {
+    return { u, sinr: u.sinr, voice: u.session!.kind === 'voice', demandMbps: u.session!.kind === 'voice' ? VOICE_GBR_MBPS : u.session!.demandMbps };
+  }
+
+  /**
+   * Resource allocation per cell: GBR voice first, then the cell's data scheduler.
+   *
+   * Carrier aggregation: a CA user's demand is split over its PCell and SCells in
+   * proportion to what each carrier could give it (rate per RB × RBs), each cell
+   * schedules its share, then demand a congested carrier could not serve moves to the
+   * carriers that had room and those cells are scheduled again (a simple joint scheduler).
+   */
   private schedule() {
     const r = this.settings.radio;
     const C = this.ctx.cells.length;
-    const perCell: SimUser[][] = Array.from({ length: C }, () => []);
-    for (const s of this.cells) s.camped = 0;
+    const perCell: CellLoad[][] = Array.from({ length: C }, () => []);
+    /** CA users: their loads on PCell + SCells, in that order. */
+    const caUsers: { u: SimUser; loads: CellLoad[]; cells: number[]; w: number[] }[] = [];
+    for (const s of this.cells) {
+      s.camped = 0;
+      s.scellUsers = 0;
+    }
     for (const u of this.users) {
+      if (!this.caEligible(u)) this.clearScells(u); // session ended, dropped, moved to Wi-Fi…
       if (u.serving < 0) continue;
       this.cells[u.serving].camped++;
-      if (u.session && !this.onWifi(u)) perCell[u.serving].push(u);
+      if (!u.session || this.onWifi(u)) continue;
+      if (!u.scells.length) {
+        perCell[u.serving].push(this.pcellLoad(u));
+        continue;
+      }
+      const cells = [u.serving, ...u.scells];
+      const sinrs = [u.sinr, ...u.scellSinr];
+      const w = cells.map((i, k) => {
+        const c = this.ctx.cells[i];
+        return linkRank(c, sinrs[k], this.ueRx(u), r).se * c.rbs * c.rbBwHz;
+      });
+      const sum = w.reduce((a, b) => a + b, 0) || 1;
+      const loads = cells.map((_, k) => ({ u, sinr: sinrs[k], voice: false, demandMbps: (u.session!.demandMbps * w[k]) / sum }));
+      loads.forEach((l, k) => perCell[cells[k]].push(l));
+      u.scells.forEach((i) => this.cells[i].scellUsers++);
+      caUsers.push({ u, loads, cells, w });
     }
-    for (let i = 0; i < C; i++) {
+    const results = new Map<CellLoad, { thr: number; rank: number }>();
+    const run = (i: number) => {
       const c = this.ctx.cells[i];
       const st = this.cells[i];
       const list = perCell[i];
       if (c.tech === 'GSM') {
-        for (const u of list) {
-          u.thrMbps = u.session!.kind === 'data' ? GSM_SLOT_MBPS : 0;
-          u.rank = 1;
-        }
+        for (const l of list) results.set(l, { thr: l.voice ? 0 : GSM_SLOT_MBPS, rank: 1 });
         st.load = c.tch > 0 ? Math.min(1, list.length / c.tch) : 0;
         st.usedRb = 0;
         st.gbrRb = 0;
-        st.servedMbps = list.reduce((a, u) => a + u.thrMbps, 0);
-        st.demandMbps = list.reduce((a, u) => a + (u.session!.kind === 'data' ? u.session!.demandMbps : 0), 0);
+        st.servedMbps = list.reduce((a, l) => a + (l.voice ? 0 : GSM_SLOT_MBPS), 0);
+        st.demandMbps = list.reduce((a, l) => a + (l.voice ? 0 : l.demandMbps), 0);
         st.capacityMbps = c.tch * GSM_SLOT_MBPS;
         // BCCH carrier always radiates at full power.
         this.loads[i] = 1;
-        continue;
+        return;
       }
       const sched = this.cellScheduler(i);
       st.scheduler = sched;
       const a = this.allocateCell(i, sched, list);
-      list.forEach((u, k) => {
-        u.thrMbps = a.thr[k];
-        u.rank = a.rank[k];
-      });
+      list.forEach((l, k) => results.set(l, { thr: a.thr[k], rank: a.rank[k] }));
       st.muGain = a.mu;
       st.usedRb = a.usedRb;
       st.gbrRb = a.gbrRb;
       st.load = c.rbs > 0 ? st.usedRb / c.rbs : 0;
       st.servedMbps = a.thr.reduce((x, y) => x + y, 0);
-      st.demandMbps = list.reduce((x, u) => x + (u.session!.kind === 'data' ? u.session!.demandMbps : VOICE_GBR_MBPS), 0);
+      st.demandMbps = list.reduce((x, l) => x + l.demandMbps, 0);
       const rate = a.meanRate > 0 ? a.meanRate : ratePerRbMbps(c, 10, r, 2);
       st.capacityMbps = c.rbs * rate * a.mu;
       this.loads[i] = r.interferenceLoad === 'full' ? 1 : Math.max(r.minInterfererLoad, st.load);
+    };
+    for (let i = 0; i < C; i++) run(i);
+
+    // CA second pass: move what congested carriers could not serve to carriers with room.
+    const again = new Set<number>();
+    for (const cu of caUsers) {
+      const thr = cu.loads.map((l) => results.get(l)!.thr);
+      const short = cu.u.session!.demandMbps - thr.reduce((a, b) => a + b, 0);
+      if (short <= 1e-6) continue;
+      const room = cu.loads.map((l, k) => thr[k] >= l.demandMbps - 1e-6 && cu.w[k] > 0);
+      const wRoom = cu.w.reduce((a, w, k) => a + (room[k] ? w : 0), 0);
+      if (wRoom <= 0) continue;
+      cu.loads.forEach((l, k) => {
+        l.demandMbps = room[k] ? thr[k] + (short * cu.w[k]) / wRoom : thr[k];
+        again.add(cu.cells[k]);
+      });
+    }
+    for (const i of again) run(i);
+
+    for (const list of perCell) {
+      for (const l of list) {
+        if (l.u.scells.length && !l.voice) continue; // CA users summed below
+        const res = results.get(l)!;
+        l.u.thrMbps = res.thr;
+        l.u.rank = res.rank;
+      }
+    }
+    for (const cu of caUsers) {
+      const res = cu.loads.map((l) => results.get(l)!);
+      cu.u.thrMbps = res.reduce((a, x) => a + x.thr, 0);
+      cu.u.rank = res[0].rank;
+      cu.u.scellThr = res.slice(1).map((x) => x.thr);
     }
     this.scheduleWifi();
   }
@@ -1618,6 +1758,13 @@ export class SimEngine {
         rbs += this.ctx.cells[i].rbs;
       }
     });
+    let caUsers = 0;
+    let scellMbps = 0;
+    for (const u of this.users) {
+      if (!u.scells.length) continue;
+      caUsers++;
+      scellMbps += u.scellThr.reduce((a, b) => a + b, 0);
+    }
     let wifiUsers = 0;
     let wifiSessions = 0;
     for (const u of this.users) {
@@ -1644,6 +1791,8 @@ export class SimEngine {
       wifiSessions,
       wifiServedMbps: this.aps.reduce((a, s) => a + s.servedMbps, 0),
       wifiCapacityMbps: this.aps.reduce((a, s) => a + s.capacityMbps, 0),
+      caUsers,
+      scellMbps,
     });
     if (this.samples.length > 3600) this.samples.shift();
   }

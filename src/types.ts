@@ -257,12 +257,24 @@ export interface WifiSettings {
   shadowingSigmaDb: number;
 }
 
+/** Carrier aggregation (LTE / NR downlink): data sessions also use secondary cells on other carriers. */
+export interface CaSettings {
+  enabled: boolean;
+  /** Component carriers per UE, PCell included (UE category / band-combination limit). */
+  maxCc: number;
+  /** Minimum RSRP to configure a secondary cell (A4-like), dBm; it is released 3 dB lower. */
+  scellMinDbm: number;
+  /** Only cells of the PCell's site (intra-eNB / gNB CA); off = any cell of the operator. */
+  coSitedOnly: boolean;
+}
+
 export interface Settings {
   radio: RadioSettings;
   users: UserSettings;
   sim: SimSettings;
   thresholds: Record<Tech, TechThresholds>;
   wifi: WifiSettings;
+  ca: CaSettings;
 }
 
 export interface Scenario {
