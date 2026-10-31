@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy (GitHub Pages + Firebase)
 
 on:
   push:
@@ -26,6 +26,10 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
@@ -40,3 +44,28 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # Same build to Firebase Hosting (https://cell-sim-lviv.web.app). Skipped until the
+  # FIREBASE_SERVICE_ACCOUNT_CELL_SIM_LVIV secret (service-account JSON key) is set.
+  firebase:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CELL_SIM_LVIV != '' }}
+    steps:
+      - if: env.HAS_KEY != 'true'
+        run: echo "::notice::FIREBASE_SERVICE_ACCOUNT_CELL_SIM_LVIV is not set; Firebase deploy skipped"
+      - if: env.HAS_KEY == 'true'
+        uses: actions/checkout@v5
+      - if: env.HAS_KEY == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - if: env.HAS_KEY == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CELL_SIM_LVIV }}
+          projectId: cell-sim-lviv
+          channelId: live
