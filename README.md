@@ -81,7 +81,8 @@ component carriers (2–5), SCell add threshold and same-site-only. A station's 
 carrier on this site*, which puts another band on the same mast with the same sector azimuths. The demo
 has an LTE 2600 (B7) layer on the seven inner Kyivstar sites next to LTE 1800. The user inspector shows each
 carrier's SINR and throughput, the station inspector shows SCell users per sector, and a KPI tile counts
-CA users and SCell traffic; SCell add/release events are in the event log (hidden by default).
+CA users and SCell traffic. On the map, each SCell gets a dashed link in its cell's colour beside the solid
+PCell link (for the open user always, for everyone with the Links layer). SCell add/release events are in the event log (hidden by default).
 
 **Reset** restarts the simulation with the same users. Global settings cover the speed ranges,
 default antennas, and the Poisson traffic rates for users with random traffic.

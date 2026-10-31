@@ -275,7 +275,7 @@ export function layersPanel(app: App): HTMLElement {
         checkField('Links: active user → serving cell / Wi-Fi AP', () => l.showLinks, (v) => {
           l.showLinks = v;
           app.mapView.renderUsers(app.engine);
-        }),
+        }, 'Solid: serving cell (PCell). Dashed, in the cell\'s colour and shifted aside: carrier-aggregation secondary cells (SCells). The user open in the inspector always shows its links.'),
         checkField('Road graph', () => l.showRoads, (v) => {
           l.showRoads = v;
           app.mapView.setRoadsVisible(v);

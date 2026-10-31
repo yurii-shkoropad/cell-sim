@@ -84,6 +84,7 @@ export class MapView {
   onPickTarget: (lat: number, lng: number) => void = () => {};
   /** Selected user's target and the rest of its route there. */
   private targetLine: L.Polyline | null = null;
+  private lastEngine: SimEngine | null = null;
   private targetMark: L.Marker | null = null;
   onApMoved: (id: string) => void = () => {};
   onStationMoved: (id: string) => void = () => {};
@@ -156,7 +157,10 @@ export class MapView {
       else if (this.placeMode === 'zone-rect' && this.zoneStart) this.showZonePreview(L.rectangle(L.latLngBounds(this.zoneStart, e.latlng)));
     });
     this.hlLayer.addTo(this.map);
-    this.map.on('zoomend', () => this.renderSectors());
+    this.map.on('zoomend', () => {
+      this.renderSectors();
+      if (this.lastEngine) this.renderUsers(this.lastEngine); // SCell link offsets are in pixels
+    });
     this.map.on('moveend', () => {
       if (this.store.layers.showBuildings) this.renderBuildings();
     });
@@ -454,6 +458,7 @@ export class MapView {
   // ---------------------------------------------------------------- users
 
   renderUsers(engine: SimEngine) {
+    this.lastEngine = engine;
     const lay = this.store.layers;
     const users = engine.users;
     if (!lay.showUsers) {
@@ -483,7 +488,8 @@ export class MapView {
     // on the selected station (solid = active session, dashed = idle).
     const selBs = this.store.selectedStationId;
     const selAp = this.store.selectedApId;
-    if ((!lay.showLinks && !selBs && !selAp) || !this.ctx || !lay.showUsers) {
+    const selUser = this.selectedUserId;
+    if ((!lay.showLinks && !selBs && !selAp && selUser === null) || !this.ctx || !lay.showUsers) {
       if (this.linkLines.length) {
         this.linkLayer.clearLayers();
         this.linkLines = [];
@@ -511,11 +517,32 @@ export class MapView {
       if (u.serving < 0) continue;
       const c = this.ctx.cells[u.serving];
       if (!c) continue;
+      const isSel = u.id === selUser;
       const ofSelected = c.bsId === selBs;
-      if (!ofSelected && !(lay.showLinks && u.session && !wifiCarried)) continue;
-      line([[u.lat, u.lng], [c.lat, c.lng]], { color: c.color, weight: ofSelected ? 2 : 1, opacity: ofSelected ? 0.9 : 0.7, dashArray: ofSelected && (!u.session || wifiCarried) ? '3 4' : undefined });
+      const showPcell = ofSelected || isSel || (lay.showLinks && u.session && !wifiCarried);
+      if (showPcell) line([[u.lat, u.lng], [c.lat, c.lng]], { color: c.color, weight: ofSelected || isSel ? 2 : 1, opacity: ofSelected || isSel ? 0.9 : 0.7, dashArray: (ofSelected || isSel) && (!u.session || wifiCarried) ? '3 4' : undefined });
+      // Carrier aggregation: one dashed line per SCell in its cell's colour, shifted sideways
+      // (co-sited SCells would otherwise lie exactly on the PCell line).
+      u.scells.forEach((i, k) => {
+        const sc = this.ctx!.cells[i];
+        if (!sc || !(isSel || sc.bsId === selBs || ofSelected || lay.showLinks)) return;
+        const strong = isSel || sc.bsId === selBs || ofSelected;
+        const px = (k % 2 ? -1 : 1) * 4 * (Math.floor(k / 2) + 1);
+        line(this.offsetLine([u.lat, u.lng], [sc.lat, sc.lng], px), { color: sc.color, weight: strong ? 2 : 1, opacity: strong ? 0.9 : 0.7, dashArray: '6 4' });
+      });
     }
     while (this.linkLines.length > k) this.linkLines.pop()!.remove();
+  }
+
+  /** Segment a→b shifted `px` screen pixels to its side (at the current zoom). */
+  private offsetLine(a: [number, number], b: [number, number], px: number): L.LatLngExpression[] {
+    const m = this.map;
+    const p = m.latLngToLayerPoint(a);
+    const q = m.latLngToLayerPoint(b);
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    const ox = (-(q.y - p.y) / len) * px;
+    const oy = ((q.x - p.x) / len) * px;
+    return [m.layerPointToLatLng([p.x + ox, p.y + oy]), m.layerPointToLatLng([q.x + ox, q.y + oy])];
   }
 
   private showZonePreview(p: L.Path) {
