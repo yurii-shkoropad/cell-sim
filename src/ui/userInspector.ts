@@ -252,6 +252,30 @@ export class UserInspector {
     return kv('Carrier aggr.', `${1 + u.scells.length} CC · PCell ${fmt(u.thrMbps - scThr, 1)} Mbps + ${parts.join(' + ')}`);
   }
 
+  /** Other carriers of the PCell's RAT and why each is (not) aggregated. */
+  private caTable(u: SimUser): HTMLElement | string {
+    if (!this.app.store.scenario.settings.ca.enabled) return '';
+    const rows = this.app.engine.caCarriers(u);
+    if (!rows.length) return '';
+    const ctx = this.app.ctx();
+    return h('div', null,
+      h('h4', null, 'Carrier aggregation candidates'),
+      h('table', { class: 'meas' },
+        h('tr', null, h('th', null, 'Cell'), h('th', null, 'MHz'), h('th', null, 'RSRP'), h('th', null, 'SINR'), h('th', null, 'Status')),
+        ...rows.map((r) => {
+          const c = ctx.cells[r.cell];
+          return h('tr', { class: r.used ? 'serving' : '' },
+            h('td', null, h('span', { class: 'dot', style: `background:${c.color}` }), ' ', c.name),
+            h('td', null, String(c.freqMHz)),
+            h('td', null, fmt(r.lvl, 0)),
+            h('td', null, fmt(r.sinr, 1)),
+            h('td', { class: r.used ? '' : 'muted' }, r.reason),
+          );
+        }),
+      ),
+    );
+  }
+
   private targetRow(u: SimUser, kv: (k: string, v: string, cls?: string) => HTMLElement): HTMLElement | string {
     if (!u.target) return '';
     if (u.arrived) return kv('Target', 'reached · stopped');
@@ -355,6 +379,7 @@ export class UserInspector {
         kv('HO candidate', u.hoCand >= 0 && ctx.cells[u.hoCand] && c ? `${ctx.cells[u.hoCand].name}, TTT ${Math.max(0, u.hoTimerMs).toFixed(0)}/${engine.hoParams(u.serving).tttMs} ms` : u.hoTimerMs < 0 ? `back-off ${(-u.hoTimerMs).toFixed(0)} ms` : '—'),
         kv('RLF timer', u.rlfTimerMs > 0 ? `${u.rlfTimerMs.toFixed(0)}/${th?.rlfTimerMs ?? 0} ms` : '—', u.rlfTimerMs > 0 ? 'bad' : ''),
       ),
+      this.caTable(u),
       h('h4', null, 'Measured cells'),
       h('table', { class: 'meas' },
         h('tr', null, h('th', null, 'Cell'), h('th', null, 'RAT'), h('th', null, 'Level'), h('th', null, 'Δ serving')),

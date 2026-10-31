@@ -60,8 +60,8 @@ describe('schedulers in the simulation', () => {
    * Full-buffer comparison: static users with continuous 100 Mbps data, so the
    * scheduler is the only difference between runs (same positions, same sessions).
    */
-  // One scenario for all runs: station ids seed the shadowing, so a fresh
-  // defaultScenario() per run would give each scheduler a different map.
+  // One scenario for all runs: a fresh defaultScenario() has new random ids,
+  // so its users (Wi-Fi draw) would differ between schedulers.
   const base = JSON.stringify(defaultScenario());
   function run(sched: SchedulerKey) {
     const scn = JSON.parse(base) as ReturnType<typeof defaultScenario>;

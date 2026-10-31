@@ -173,6 +173,8 @@ function meanCellFairness(byCell: Map<number, number[]>): number {
 }
 
 /** Small, fast, seedable PRNG. */
+const fmt1 = (v: number) => (Number.isFinite(v) ? v.toFixed(1) : '—');
+
 function mulberry32(seed: number) {
   let a = seed >>> 0;
   return () => {
@@ -1003,6 +1005,54 @@ export class SimEngine {
     u.scells = picked;
     u.scellSinr = picked.map((i) => this.sinrAt(i, u.x, u.y));
     u.scellThr = picked.map((i) => old.get(i) ?? 0);
+  }
+
+  /**
+   * For the inspector: every other carrier of the PCell's RAT the user can hear, the cell
+   * that would be its SCell, and why it is or is not aggregated (same rules as caStep).
+   */
+  caCarriers(u: SimUser): { cell: number; lvl: number; sinr: number; used: boolean; reason: string }[] {
+    if (u.serving < 0) return [];
+    const pc = this.ctx.cells[u.serving];
+    if (pc.tech === 'GSM') return [];
+    const ca = this.settings.ca;
+    const qOut = this.settings.thresholds[pc.tech].qOutSinrDb;
+    this.stepId = (this.stepId + 1) >>> 0 || 1;
+    // Strongest cell per carrier: on the PCell's site, and anywhere.
+    const site = new Map<number, number>();
+    const any = new Map<number, number>();
+    const better = (m: Map<number, number>, f: number, i: number) => {
+      const j = m.get(f);
+      if (j === undefined || this.level(i, u.x, u.y) > this.level(j, u.x, u.y)) m.set(f, i);
+    };
+    for (const i of this.candidateCells(u)) {
+      const c = this.ctx.cells[i];
+      if (i === u.serving || c.tech !== pc.tech || this.level(i, u.x, u.y) === -Infinity) continue;
+      better(any, c.freqMHz, i);
+      if (Math.hypot(c.x - pc.x, c.y - pc.y) <= CA_COSITE_M) better(site, c.freqMHz, i);
+    }
+    const why = !ca.enabled || ca.maxCc < 2 ? 'CA off (Radio tab)'
+      : !u.session ? 'no session (CA only for data)'
+      : u.session.kind !== 'data' ? 'voice call (CA only for data)'
+      : this.onWifi(u) ? 'session is on Wi-Fi'
+      : null;
+    const out: { cell: number; lvl: number; sinr: number; used: boolean; reason: string }[] = [];
+    for (const [f, best] of any) {
+      const i = ca.coSitedOnly ? site.get(f) : best;
+      const c = this.ctx.cells[i ?? best];
+      const lvl = this.level(i ?? best, u.x, u.y);
+      const sinr = this.sinrAt(i ?? best, u.x, u.y);
+      const used = i !== undefined && u.scells.includes(i);
+      const kept = used ? CA_RELEASE_HYST_DB : 0;
+      if (c.fLo < pc.fHi && c.fHi > pc.fLo) continue; // the PCell's own carrier
+      const reason = used ? `SCell, ${fmt1(u.scellThr[u.scells.indexOf(i!)])} Mbps`
+        : i === undefined ? `not on the PCell's site (best: ${c.name}; turn off "Same site only")`
+        : why ?? (lvl < ca.scellMinDbm - kept ? `RSRP below the ${ca.scellMinDbm} dBm threshold`
+          : sinr < qOut ? `SINR below Qout ${qOut} dB (interference on this carrier)`
+          : `max ${ca.maxCc} carriers reached`);
+      out.push({ cell: i ?? best, lvl, sinr, used, reason });
+    }
+    return out.sort((a, b) => Number(b.used) - Number(a.used) || b.lvl - a.lvl);
   }
 
   private tryHandover(u: SimUser, target: number, irat: boolean) {

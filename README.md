@@ -129,7 +129,7 @@ The **Models** tab in the app has the full formulas. In short:
 | Path loss | Okumura-Hata (≤1500 MHz) / COST-231 Hata (>1500 MHz), with environment corrections and a free-space floor; or **COST-231 Walfisch–Ikegami on OSM buildings** |
 | Buildings | Footprints and heights (`height`, `building:levels`, type) rasterised at 3 m; 720 rays per site up to 4 km; exact LOS test, rooftop-to-street and multi-screen diffraction from actual roof heights and spacing; ITU-R P.2109 building entry loss for indoor UEs |
 | Antenna | 3GPP TR 36.814 parabolic horizontal and vertical pattern, with tilt and front-to-back limit |
-| Shadowing | Log-normal truncated at ±3σ, spatially correlated (lattice at the decorrelation distance, per site) |
+| Shadowing | Log-normal truncated at ±3σ, spatially correlated (lattice at the decorrelation distance, per site position: every band / RAT on one mast shares it) |
 | SINR | Wideband, spectrum-overlap weighted, load weighted; thermal noise is kTB + NF |
 | Throughput | Truncated Shannon (3GPP TR 36.942) per layer, per-RB rate × RBs |
 | Modulation | Per-station max (QPSK/16/64/256/1024QAM) caps per-layer SE at the 3GPP CQI table maxima |

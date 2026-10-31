@@ -110,7 +110,10 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
   for (const bs of scn.stations) {
     if (!bs.enabled) continue;
     const { x, y } = proj.toXY(bs.lat, bs.lng);
-    const siteSeed = seedFromString(bs.id);
+    // Shadowing belongs to the mast's surroundings, not the radio: every station at the same
+    // position (other bands / RATs / operators on one mast) shares it, as it is ~fully
+    // correlated across carriers of a site.
+    const siteSeed = seedFromString(`${bs.lat.toFixed(5)},${bs.lng.toFixed(5)}`);
     const sp = paths && r.model === 'cost231-wi' ? paths(bs, x, y) : null;
     const pathMap = sp ? pathLoss.push(sp.loss) - 1 : -1;
     if (sp) pathCond.push(sp.cond);

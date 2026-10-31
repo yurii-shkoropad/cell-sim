@@ -5,7 +5,7 @@ import { defaultScenario } from '../state/defaults';
 import { SimEngine } from './engine';
 
 type Scn = ReturnType<typeof defaultScenario>;
-/** Demo scenario with fixed ids (site ids seed the shadowing, user ids the Wi-Fi on/off draw). */
+/** Demo scenario with fixed ids (user ids seed the Wi-Fi on/off draw; ids also order the cells). */
 function stableScenario(): Scn {
   const s = defaultScenario();
   s.stations.forEach((bs, i) => {

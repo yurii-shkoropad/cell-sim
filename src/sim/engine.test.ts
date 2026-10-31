@@ -145,7 +145,7 @@ describe('SimEngine', () => {
     const scn0 = defaultScenario();
     scn0.settings.wifi.enabled = false;
     scn0.users = scn0.users!.slice(0, 151);
-    // Fixed ids: site ids seed the shadowing, so random ids would give a different radio map per run.
+    // Fixed ids: user ids seed the Wi-Fi on/off draw, so random ids would change the run.
     scn0.stations.forEach((bs, i) => {
       bs.id = `bs${i}`;
       bs.sectors.forEach((x, j) => (x.id = `bs${i}s${j}`));
