@@ -60,6 +60,7 @@ export class StationInspector {
     this.id = null;
     this.el.style.display = 'none';
     this.app.mapView.map.getContainer().classList.remove('inspector-open');
+    this.app.mapView.setSectorHighlight(null);
     clearInterval(this.timer);
   }
 

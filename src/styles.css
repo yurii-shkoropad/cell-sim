@@ -107,7 +107,9 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 .derived { font-size: 12px; color: var(--text-2); background: var(--surface); border: 1px solid var(--surface-2); border-radius: 6px; padding: 6px 8px; margin: 8px 0; line-height: 1.5; }
 .warn { color: var(--warn); }
 .sector-grid { overflow-x: auto; }
-.sg-head, .sg-row { display: grid; grid-template-columns: 22px repeat(6, 44px) 92px 46px 24px; gap: 3px; align-items: center; min-width: 470px; }
+.sg-head, .sg-row { display: grid; grid-template-columns: 30px 22px repeat(6, 44px) 92px 46px 24px; gap: 3px; align-items: center; min-width: 500px; }
+.sec-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.sec-tag .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
 .sg-head { color: var(--muted); font-size: 10px; }
 .sg-row { margin: 2px 0; }
 .sg-row input[type=number] { padding: 3px; font-size: 12px; }
@@ -336,7 +338,7 @@ table.cmp tr.live td:first-child { font-weight: 600; }
 .ul-batch-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 
 /* per-cell handover parameters */
-.ho-head, .ho-row { display: grid; grid-template-columns: 28px repeat(4, 1fr); gap: 4px; align-items: center; }
+.ho-head, .ho-row { display: grid; grid-template-columns: 34px repeat(4, 1fr); gap: 4px; align-items: center; }
 .ho-head { color: var(--muted); font-size: 10.5px; }
 .ho-row { margin: 2px 0; }
 .ho-row input { padding: 3px; font-size: 12px; }

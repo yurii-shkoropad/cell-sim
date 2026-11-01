@@ -24,6 +24,7 @@ const presetOptions = () => PRESETS.map((p) => [p.key, p.label] as [string, stri
  */
 export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement, state: { profileSector: number }) {
   const { store } = app;
+  app.mapView.setSectorHighlight(null); // rows are rebuilt: a hovered one never gets its mouseleave
   clear(host);
   const opOptions = store.scenario.operators.map((o) => [o.id, o.name] as [string, string]);
   const changed = () => store.emit('network');
@@ -198,8 +199,8 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
     derived,
     h('h4', null, 'Sectors'),
     h('div', { class: 'sector-grid' },
-      h('div', { class: 'sg-head' }, ...['On', 'Az°', 'H-BW°', 'V-BW°', 'Tilt°', 'Gain dBi', 'F/B dB', 'Freq MHz', bs.tech === 'GSM' ? 'BSIC' : 'PCI', ''].map((t) => h('span', null, t))),
-      ...bs.sectors.map((s, i) => sectorRow(bs, s, i, ch, structural)),
+      h('div', { class: 'sg-head' }, ...['', 'On', 'Az°', 'H-BW°', 'V-BW°', 'Tilt°', 'Gain dBi', 'F/B dB', 'Freq MHz', bs.tech === 'GSM' ? 'BSIC' : 'PCI', ''].map((t) => h('span', null, t))),
+      ...bs.sectors.map((s, i) => sectorRow(bs, s, i, ch, structural, sectorTag(app, s, i))),
     ),
     h('div', { class: 'row' },
       button('+ Sector', () => {
@@ -289,7 +290,7 @@ function hoTable(app: App, bs: BaseStation, changed: () => void): HTMLElement {
     h('div', { class: 'ho-head' }, h('span', null, ''), ...cols.map((c) => h('span', { title: c.title }, c.label))),
     ...bs.sectors.map((s, i) =>
       h('div', { class: 'ho-row' },
-        h('span', null, `S${i + 1}`),
+        sectorTag(app, s, i).tag,
         ...cols.map((c) => {
           const cur = s.ho?.[c.key];
           const input = h('input', { type: 'number', step: String(c.step), placeholder: String(c.def), value: cur === undefined ? '' : String(cur), title: `${c.title} (empty = default ${c.def})`, onchange: () => {
@@ -310,7 +311,25 @@ function hoTable(app: App, bs: BaseStation, changed: () => void): HTMLElement {
   );
 }
 
-function sectorRow(bs: BaseStation, s: Sector, i: number, changed: () => void, structural: () => void): HTMLElement {
+/**
+ * "S1" with a dot in the sector's cell colour (its wedge on the map while the station is
+ * open, best-server layer, links). Hovering or editing the row highlights the wedge.
+ */
+function sectorTag(app: App, s: Sector, i: number): { tag: HTMLElement; hover: (row: HTMLElement) => void } {
+  const color = app.ctx().cells.find((c) => c.sectorId === s.id)?.color ?? '#bbb';
+  const tag = h('span', { class: 'sec-tag', title: s.enabled ? 'Cell colour on the map' : 'Sector off' }, h('span', { class: 'dot', style: `background:${color}` }), `S${i + 1}`);
+  const hover = (row: HTMLElement) => {
+    const on = () => app.mapView.setSectorHighlight(s.id);
+    const off = () => app.mapView.setSectorHighlight(null);
+    row.addEventListener('mouseenter', on);
+    row.addEventListener('mouseleave', off);
+    row.addEventListener('focusin', on);
+    row.addEventListener('focusout', off);
+  };
+  return { tag, hover };
+}
+
+function sectorRow(bs: BaseStation, s: Sector, i: number, changed: () => void, structural: () => void, tag: ReturnType<typeof sectorTag>): HTMLElement {
   const num = (get: () => number, set: (v: number) => void, step = 1, min?: number, max?: number) => {
     const input = h('input', {
       type: 'number',
@@ -338,7 +357,8 @@ function sectorRow(bs: BaseStation, s: Sector, i: number, changed: () => void, s
     s.enabled = on.checked;
     changed();
   } });
-  return h('div', { class: 'sg-row' },
+  const row = h('div', { class: 'sg-row' },
+    tag.tag,
     on,
     num(() => s.azimuth, (v) => (s.azimuth = ((v % 360) + 360) % 360), 5),
     num(() => s.hBeamwidth, (v) => (s.hBeamwidth = v), 5, 10, 360),
@@ -354,4 +374,6 @@ function sectorRow(bs: BaseStation, s: Sector, i: number, changed: () => void, s
       structural();
     } }, '×'),
   );
+  tag.hover(row);
+  return row;
 }

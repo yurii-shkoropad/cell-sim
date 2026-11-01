@@ -80,6 +80,13 @@ export class MapView {
   onAddSite: (lat: number, lng: number) => void = () => {};
   onAddUser: (lat: number, lng: number) => void = () => {};
   onAddAp: (lat: number, lng: number) => void = () => {};
+  /** Sector emphasised on the map (hovered / edited row in the station editor). */
+  private highlightSectorId: string | null = null;
+  setSectorHighlight(id: string | null) {
+    if (id === this.highlightSectorId) return;
+    this.highlightSectorId = id;
+    this.renderSectors();
+  }
   /** Target picked for the user in the inspector; the mode then ends. */
   onPickTarget: (lat: number, lng: number) => void = () => {};
   /** Selected user's target and the rest of its route there. */
@@ -311,16 +318,19 @@ export class MapView {
       const dim = !visible(bs);
       const opColor = ops.get(bs.operatorId)?.color ?? '#555';
       const selected = this.store.selectedStationId === bs.id;
+      // The open station shows each sector in its cell colour (as in its Configure tab).
+      const ownColors = byServer || selected;
       // Stagger lengths by technology so co-located 2G/4G/5G sectors are distinguishable.
       const len = lenM * (bs.tech === 'GSM' ? 1.25 : bs.tech === 'LTE' ? 1 : 0.8);
       for (const s of bs.sectors) {
-        const color = byServer ? (cellColor.get(s.id) ?? opColor) : opColor;
+        const color = ownColors ? (cellColor.get(s.id) ?? opColor) : opColor;
+        const hl = s.id === this.highlightSectorId;
         const style: L.PathOptions = {
           pane: 'sectorPane',
           color: selected ? '#000' : color,
-          weight: selected ? 2 : 1,
+          weight: hl ? 4 : selected ? 2 : 1,
           fillColor: color,
-          fillOpacity: !s.enabled || !bs.enabled ? 0.05 : dim ? 0.08 : 0.45,
+          fillOpacity: hl ? 0.8 : !s.enabled || !bs.enabled ? 0.05 : dim ? 0.08 : 0.45,
           opacity: dim ? 0.3 : 0.9,
           dashArray: s.enabled && bs.enabled ? undefined : '3 3',
           interactive: false,
