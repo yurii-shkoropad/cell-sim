@@ -89,10 +89,11 @@ export function cssGradient(scale: Scale): string {
   const s = scale.stops;
   const lo = s[0].v;
   const hi = s[s.length - 1].v;
-  const at = (v: number) => (((v - lo) / (hi - lo)) * 100).toFixed(1);
   if (scale.classes) {
-    // Hard edges: each class is a flat band.
-    const bands = s.slice(0, -1).map((x, i) => `rgb(${x.c.join(',')}) ${at(x.v)}% ${at(s[i + 1].v)}%`);
+    // Hard edges, every class an equal-width band (its boundary values then fit underneath).
+    const n = s.length - 1;
+    const pct = (i: number) => ((i / n) * 100).toFixed(1);
+    const bands = s.slice(0, -1).map((x, i) => `rgb(${x.c.join(',')}) ${pct(i)}% ${pct(i + 1)}%`);
     return `linear-gradient(to right, ${bands.join(', ')})`;
   }
   return `linear-gradient(to right, ${s.map((x) => `rgb(${x.c.join(',')}) ${(((x.v - lo) / (hi - lo)) * 100).toFixed(1)}%`).join(', ')})`;

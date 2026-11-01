@@ -253,29 +253,16 @@ export class HeatmapLayer {
       ticks.className = 'legend-ticks';
       const lo = scale.stops[0].v;
       const hi = scale.stops[scale.stops.length - 1].v;
-      for (const t of scale.ticks) {
+      // Classes: a label at every colour boundary, on the legend's equal-width bands.
+      const tickVals = scale.classes ? scale.stops.map((x) => x.v) : scale.ticks;
+      for (const [k, t] of tickVals.entries()) {
         const s = document.createElement('span');
-        const pos = ((scale.axis ? scale.axis(t) : t) - lo) / (hi - lo);
+        const pos = scale.classes ? k / (tickVals.length - 1) : ((scale.axis ? scale.axis(t) : t) - lo) / (hi - lo);
         s.style.left = `${(pos * 100).toFixed(1)}%`;
         s.textContent = String(t);
         ticks.appendChild(s);
       }
-      // Flat classes get a labelled class list instead of the (crowded) tick numbers.
-      if (!scale.classes) el.appendChild(ticks);
-      if (scale.classes) {
-        // Class list, strongest first, in the drive-test (QGIS) notation.
-        const row = document.createElement('div');
-        row.className = 'legend-cats';
-        const st = scale.stops;
-        for (let i = st.length - 2; i >= 0; i--) {
-          const sp = document.createElement('span');
-          const sw = document.createElement('i');
-          sw.style.background = `rgb(${st[i].c.join(',')})`;
-          sp.append(sw, `[${st[i].v}, ${st[i + 1].v}${i === st.length - 2 ? ']' : ')'}`);
-          row.appendChild(sp);
-        }
-        el.appendChild(row);
-      }
+      el.appendChild(ticks);
     } else if (kind === 'condition' && !this.ctx?.paths && !this.ctx?.indoor) {
       // Nothing to draw: explain why and offer the fix instead of an empty map.
       const wi = this.store.scenario.settings.radio.model === 'cost231-wi';
