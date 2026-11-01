@@ -259,6 +259,17 @@ export interface WifiSettings {
   shadowingSigmaDb: number;
 }
 
+/** A building drawn by the user (planned / future), added to the OSM buildings for propagation. */
+export interface PlannedBuilding {
+  id: string;
+  name: string;
+  heightM: number;
+  /** Outline, [lat, lng] corners (open ring). */
+  ring: [number, number][];
+  /** Off = not built yet: left out of propagation (compare before / after). */
+  enabled: boolean;
+}
+
 /** Carrier aggregation (LTE / NR downlink): data sessions also use secondary cells on other carriers. */
 export interface CaSettings {
   enabled: boolean;
@@ -292,4 +303,6 @@ export interface Scenario {
   /** Wi-Fi access points (optional for older files). */
   wifi?: WifiAp[];
   settings: Settings;
+  /** User-drawn (planned) buildings. */
+  plannedBuildings?: PlannedBuilding[];
 }

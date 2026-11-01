@@ -84,6 +84,12 @@ carrier's SINR and throughput, the station inspector shows SCell users per secto
 CA users and SCell traffic. On the map, each SCell gets a dashed link in its cell's colour beside the solid
 PCell link (for the open user always, for everyone with the Links layer). SCell add/release events are in the event log (hidden by default).
 
+**Buildings tab:** path-loss model (Hata, or COST-231 Walfisch–Ikegami on buildings), OSM footprints
+(bundled for the demo area, or loaded from Overpass), default height, indoor entry loss, and **planned
+buildings**: draw a future building's outline on the map and set its height. It joins the OSM buildings in the
+propagation model (with Walfisch–Ikegami it shadows the coverage behind it; with Hata it only adds indoor loss),
+and can be ticked off to compare coverage before and after it is built. Planned buildings are saved in the scenario.
+
 **Reset** restarts the simulation with the same users. Global settings cover the speed ranges,
 default antennas, and the Poisson traffic rates for users with random traffic.
 

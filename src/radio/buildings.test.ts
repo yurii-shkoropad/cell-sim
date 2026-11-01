@@ -3,7 +3,7 @@ import { LocalProjection } from '../geo';
 import { defaultScenario } from '../state/defaults';
 import { castStationPaths, PATH_GRID, PathCond, pathSampleIndex } from './buildingPaths';
 import { BuildingModel } from './buildingModel';
-import { buildingsFromBundle, buildingsFromOverpass, heightFromTags, rasterize, stitchRings, type BuildingSet } from './buildings';
+import { buildingsFromBundle, buildingsFromOverpass, heightFromTags, rasterize, stitchRings, withPlanned, type BuildingSet } from './buildings';
 import { buildRadioContext, pathCondition, rxLevel } from './cells';
 import { buildingEntryLossDb, fsplDb, multiScreen, walfischIkegami } from './walfisch';
 
@@ -126,6 +126,30 @@ describe('building model in the radio context', () => {
     expect(pathCondition(ctx, c, 0, 300)).toBe(PathCond.Nlos);
     expect(pathCondition(ctx, c, 0, -300)).toBe(PathCond.Los);
     expect(rxLevel(ctx, c, 0, 300)).toBeLessThan(rxLevel(hata, c, 0, 300));
+  });
+});
+
+describe('planned buildings', () => {
+  it('are appended to the OSM set when switched on, and block the path with the building model', () => {
+    const scn = defaultScenario();
+    scn.settings.radio.shadowingEnabled = false;
+    scn.settings.radio.model = 'cost231-wi';
+    const proj = new LocalProjection(scn.center.lat, scn.center.lng);
+    const osm = setWithBox(proj, -900, -900, -880, -880, 10); // far away, irrelevant
+    const tower = { id: 'pb1', name: 'Tower', heightM: 80, enabled: true, ring: [[-40, 150], [40, 150], [40, 190], [-40, 190]].map(([x, y]) => { const p = proj.toLatLng(x, y); return [p.lat, p.lng] as [number, number]; }) };
+    const merged = withPlanned(osm, [tower])!;
+    expect(merged.count).toBe(osm.count + 1);
+    expect(merged.heights[merged.count - 1]).toBe(80);
+    expect(withPlanned(osm, [{ ...tower, enabled: false }])).toBe(osm);
+
+    const level = (set: BuildingSet) => {
+      const model = new BuildingModel();
+      model.setBuildings(set, 'test');
+      const ctx = buildRadioContext(scn, model.provider(scn), 0, model.indoorMask(scn));
+      const c = ctx.cells.find((x) => x.x === 0 && x.y === 0 && x.tech === 'LTE' && Math.abs(x.azimuth - 30) > 60)!;
+      return rxLevel(ctx, c, 0, 400); // behind the tower, seen from the central site
+    };
+    expect(level(merged)).toBeLessThan(level(osm) - 10);
   });
 });
 

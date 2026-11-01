@@ -5,7 +5,7 @@ import { SimEngine, techMaskOf, techsOf, type SimUser } from './sim/engine';
 import type { UserSpec } from './types';
 import { fetchOverpass, loadBundledRoads, loadRoadGraph, type Bounds, type RoadGraph } from './sim/roads';
 import { BuildingModel } from './radio/buildingModel';
-import { buildingsFromBundle, buildingsFromOverpass, type BuildingSet, type BundledBuildings } from './radio/buildings';
+import { buildingsFromBundle, buildingsFromOverpass, withPlanned, type BuildingSet, type BundledBuildings } from './radio/buildings';
 import { LocalProjection } from './geo';
 import { Store } from './state/store';
 import './styles.css';
@@ -19,6 +19,7 @@ import { dataPanel, planningPanel } from './ui/panels/data';
 import { helpPanel } from './ui/panels/help';
 import { networkPanel } from './ui/panels/network';
 import { layersPanel, radioPanel } from './ui/panels/settings';
+import { buildingsPanel } from './ui/panels/buildings';
 import { usersPanel } from './ui/panels/users';
 import { wifiPanel } from './ui/panels/wifi';
 
@@ -118,6 +119,10 @@ const app: App = {
   loadRoads,
   buildings: () => buildings,
   loadBuildings,
+  plannedBuildingsChanged: () => {
+    store.emit('network'); // saves the scenario
+    syncBuildings();
+  },
   respawnUsers: () => resetSim(),
   deleteAllUsers: () => app.deleteUsers((store.scenario.users ?? []).map((u) => u.id)),
   addUsers: (specs) => {
@@ -272,6 +277,7 @@ const tabs: [string, string, () => HTMLElement][] = [
   ['users', 'Users', () => usersPanel(app)],
   ['wifi', 'Wi-Fi', () => wifiPanel(app)],
   ['radio', 'Radio', () => radioPanel(app)],
+  ['buildings', 'Buildings', () => buildingsPanel(app)],
   ['layers', 'Layers', () => layersPanel(app)],
   ['plan', 'Planning', () => planningPanel(app)],
   ['data', 'Import/Export', () => dataPanel(app)],
@@ -427,10 +433,24 @@ async function loadRoads() {
 let roadsLoading = false;
 
 // ---------------------------------------------------------------- buildings
+/** OSM footprints as loaded; the propagation model gets them merged with the planned buildings. */
+let osmBuildings: { set: BuildingSet; source: string } | null = null;
+
 function applyBuildings(set: BuildingSet, source: string) {
-  buildings.setBuildings(set, source);
-  bldStatus.textContent = `buildings: ${set.count} (${source})`;
-  mapView.setBuildings(set, store.scenario.settings.radio.defaultBuildingHeightM);
+  osmBuildings = { set, source };
+  syncBuildings();
+}
+
+/** Rebuild the building set from the OSM footprints plus the planned buildings switched on. */
+function syncBuildings() {
+  const planned = store.scenario.plannedBuildings ?? [];
+  const on = planned.filter((p) => p.enabled).length;
+  const merged = withPlanned(osmBuildings?.set ?? null, planned);
+  const source = osmBuildings ? `${osmBuildings.source}${on ? ` + ${on} planned` : ''}` : `${on} planned`;
+  buildings.setBuildings(merged, source);
+  bldStatus.textContent = merged ? `buildings: ${merged.count} (${source})` : '';
+  mapView.setBuildings(merged, store.scenario.settings.radio.defaultBuildingHeightM);
+  mapView.renderPlanned(planned);
   scheduleRebuild();
 }
 
@@ -458,6 +478,7 @@ async function loadBuildings() {
 }
 
 // ---------------------------------------------------------------- boot
+store.on('scenario', () => syncBuildings());
 store.on('scenario', () => {
   roads = null;
   roadStatus.textContent = '';
@@ -468,6 +489,7 @@ store.on('scenario', () => {
 });
 rebuild();
 resetSim();
+syncBuildings(); // planned buildings of the saved scenario (OSM footprints arrive later)
 requestAnimationFrame(frame);
 // Put users on real streets right away: the demo area ships with an OSM extract,
 // anywhere else is fetched live from Overpass.

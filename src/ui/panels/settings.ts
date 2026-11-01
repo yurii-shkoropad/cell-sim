@@ -25,7 +25,7 @@ export function radioPanel(app: App): HTMLElement {
           set();
           render();
         }),
-        r.model === 'cost231-wi' ? buildingsBlock(app, set) : indoorBlock(app, set),
+        h('p', { class: 'hint' }, 'OSM buildings, indoor (entry) loss and planned buildings: see the Buildings tab.'),
         numField('UE antenna height', () => r.ueHeightM, (v) => {
           r.ueHeightM = v;
           set();
@@ -123,73 +123,6 @@ export function radioPanel(app: App): HTMLElement {
   store.on('scenario', render);
   store.on('model', render);
   return root;
-}
-
-/** Building model options and data status (shown when the Walfisch–Ikegami model is selected). */
-function buildingsBlock(app: App, changed: () => void): HTMLElement {
-  const r = app.store.scenario.settings.radio;
-  const status = h('div', { class: 'status-line' });
-  const upd = () => {
-    const b = app.buildings();
-    status.textContent = b.set ? `${b.set.count} OSM buildings loaded (${b.source}). Paths are traced up to 4 km from each site; beyond that, or outside the data, Hata is used.` : 'No buildings loaded: Hata is used everywhere until you load them.';
-  };
-  upd();
-  app.onLiveTick(upd);
-  const btn = button('Load OSM buildings for current view', async () => {
-    btn.disabled = true;
-    try {
-      await app.loadBuildings();
-    } finally {
-      btn.disabled = false;
-      upd();
-    }
-  });
-  return h('div', { class: 'sub-block' },
-    h('p', { class: 'hint' }, 'Each site casts rays through OSM building footprints and heights. A direct path not cut by any building is LOS (street-canyon formula); a blocked one adds rooftop-to-street diffraction from the last building’s height and multi-screen diffraction over the buildings crossed. UEs inside a footprint get building entry loss. With buildings modelled explicitly, a smaller shadowing σ (≈ 4 dB) is appropriate.'),
-    selectField('Building entry loss', [['traditional', 'Traditional building (ITU-R P.2109)'], ['thermal', 'Thermally efficient (P.2109)'], ['none', 'None']], () => r.buildingEntry, (v) => {
-      r.buildingEntry = v;
-      changed();
-    }),
-    numField('Default building height', () => r.defaultBuildingHeightM, (v) => {
-      r.defaultBuildingHeightM = v;
-      app.mapView.setBuildings(app.buildings().set, v);
-      changed();
-    }, { min: 2, max: 100, step: 1, unit: 'm', title: 'For OSM buildings without height, levels or a recognised type' }),
-    status,
-    h('div', { class: 'row' }, btn),
-  );
-}
-
-/** Hata models: indoor loss for UEs inside OSM building footprints. */
-function indoorBlock(app: App, changed: () => void): HTMLElement {
-  const r = app.store.scenario.settings.radio;
-  const status = h('div', { class: 'status-line' });
-  const upd = () => {
-    const b = app.buildings();
-    status.textContent = r.buildingEntry === 'none' ? 'Entry loss off: every point is treated as outdoor.'
-      : b.set ? `${b.set.count} OSM buildings loaded (${b.source}): points inside a footprint are indoor.` : 'No buildings loaded: every point is treated as outdoor.';
-  };
-  upd();
-  app.onLiveTick(upd);
-  const btn = button('Load OSM buildings for current view', async () => {
-    btn.disabled = true;
-    try {
-      await app.loadBuildings();
-    } finally {
-      btn.disabled = false;
-      upd();
-    }
-  });
-  return h('div', { class: 'sub-block' },
-    h('p', { class: 'hint' }, 'Hata gives the median loss to a street-level UE. A UE (or heatmap point) inside an OSM building footprint also gets the building entry loss at the cell’s frequency; outdoors stays plain Hata. LOS / NLOS needs the Walfisch–Ikegami building model.'),
-    selectField('Indoor (building entry) loss', [['traditional', 'Traditional building (ITU-R P.2109)'], ['thermal', 'Thermally efficient (P.2109)'], ['none', 'None (all outdoor)']], () => r.buildingEntry, (v) => {
-      r.buildingEntry = v;
-      changed();
-      upd();
-    }),
-    status,
-    h('div', { class: 'row' }, btn),
-  );
 }
 
 function thresholdTable(th: Record<Tech, TechThresholds>, changed: () => void): HTMLElement {

@@ -18,6 +18,8 @@ export interface App {
   loadRoads(): Promise<void>;
   buildings(): BuildingModel;
   loadBuildings(): Promise<void>;
+  /** After adding / editing / removing planned buildings: re-merge them and recompute propagation. */
+  plannedBuildingsChanged(): void;
   respawnUsers(): void;
   deleteAllUsers(): void;
   /** Add users to the scenario and the running simulation. */

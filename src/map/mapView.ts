@@ -8,7 +8,7 @@ import type { Zone } from '../sim/population';
 import type { RoadGraph } from '../sim/roads';
 import type { Store } from '../state/store';
 import type { BuildingSet } from '../radio/buildings';
-import type { BaseStation, WifiAp } from '../types';
+import type { BaseStation, PlannedBuilding, WifiAp } from '../types';
 import { wifiRangeM } from '../radio/wifi';
 
 const TECH_SHORT = { GSM: '2G', LTE: '4G', NR: '5G' } as const;
@@ -69,7 +69,13 @@ export class MapView {
    * What a click on the empty map does: place a base station or a user, pick a
    * zone for batch-adding users (rectangle: two corners; circle: its centre), or nothing.
    */
-  placeMode: 'site' | 'user' | 'wifi' | 'zone-rect' | 'zone-circle' | 'target' | null = null;
+  placeMode: 'site' | 'user' | 'wifi' | 'zone-rect' | 'zone-circle' | 'target' | 'building' | null = null;
+  /** Called with the outline when a planned building has been drawn. */
+  onAddBuilding: (ring: [number, number][]) => void = () => {};
+  /** Corners of the building being drawn, and its preview. */
+  private drawPts: L.LatLng[] = [];
+  private drawLayer = L.layerGroup();
+  private plannedLayer = L.layerGroup();
   /** Called when a zone is picked; the mode then ends. */
   onZone: (z: Zone) => void = () => {};
   /** Radius used by the circle zone preview, m. */
@@ -153,7 +159,14 @@ export class MapView {
       if (this.placeMode === 'site') this.onAddSite(e.latlng.lat, e.latlng.lng);
       else if (this.placeMode === 'user') this.onAddUser(e.latlng.lat, e.latlng.lng);
       else if (this.placeMode === 'wifi') this.onAddAp(e.latlng.lat, e.latlng.lng);
-      else if (this.placeMode === 'target') {
+      else if (this.placeMode === 'building') {
+        const first = this.drawPts[0];
+        if (first && this.drawPts.length >= 3 && this.map.latLngToContainerPoint(first).distanceTo(e.containerPoint) < 12) this.setPlaceMode(null);
+        else {
+          this.drawPts.push(e.latlng);
+          this.renderDraw(null);
+        }
+      } else if (this.placeMode === 'target') {
         this.setPlaceMode(null);
         this.onPickTarget(e.latlng.lat, e.latlng.lng);
       }
@@ -175,6 +188,7 @@ export class MapView {
     });
     // Live preview of the zone being picked.
     this.map.on('mousemove', (e: L.LeafletMouseEvent) => {
+      if (this.placeMode === 'building' && this.drawPts.length) this.renderDraw(e.latlng);
       if (this.placeMode === 'zone-circle') this.showZonePreview(L.circle(e.latlng, { radius: this.zoneRadiusM }));
       else if (this.placeMode === 'zone-rect' && this.zoneStart) this.showZonePreview(L.rectangle(L.latLngBounds(this.zoneStart, e.latlng)));
     });
@@ -198,7 +212,9 @@ export class MapView {
     this.banner.style.display = 'none';
     isolateFromMap(this.banner);
     document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.placeMode === 'building') this.drawPts = []; // cancel, don't commit
       if (e.key === 'Escape' && this.placeMode) this.setPlaceMode(null);
+      if (e.key === 'Enter' && this.placeMode === 'building') this.setPlaceMode(null);
     });
   }
 
@@ -209,6 +225,18 @@ export class MapView {
    */
   setPlaceMode(mode: MapView['placeMode']) {
     if (this.placeMode === mode) return;
+    if (this.placeMode === 'building') {
+      // Leaving the drawing (Done, Enter, a click on the first corner): commit if it is a polygon.
+      const ring = this.drawPts.map((p) => [p.lat, p.lng] as [number, number]);
+      this.drawPts = [];
+      this.drawLayer.clearLayers();
+      this.map.doubleClickZoom.enable();
+      if (ring.length >= 3) setTimeout(() => this.onAddBuilding(ring), 0);
+    }
+    if (mode === 'building') {
+      this.drawLayer.addTo(this.map);
+      this.map.doubleClickZoom.disable();
+    }
     this.placeMode = mode;
     this.zoneStart = null;
     this.zonePreview?.remove();
@@ -229,7 +257,10 @@ export class MapView {
     const title = document.createElement('b');
     const sub = document.createElement('span');
     sub.className = 'place-sub';
-    if (mode === 'target') {
+    if (mode === 'building') {
+      title.textContent = 'Draw the planned building: click its corners';
+      sub.textContent = 'Click the first corner, Enter or Done to finish · Esc to cancel';
+    } else if (mode === 'target') {
       title.textContent = 'Click the map to set where the selected user goes';
       sub.textContent = 'It follows the roads there and stops · Esc to cancel';
     } else if (mode === 'zone-rect' || mode === 'zone-circle') {
@@ -678,6 +709,37 @@ export class MapView {
       this.buildingBoxes = b;
     }
     this.renderBuildings();
+  }
+
+  /** Preview of the outline being drawn (to the cursor). */
+  private renderDraw(cursor: L.LatLng | null) {
+    this.drawLayer.clearLayers();
+    const pts = cursor ? [...this.drawPts, cursor] : this.drawPts;
+    if (pts.length >= 2) L.polygon(pts, { color: '#c2185b', weight: 2, dashArray: '5 4', fillOpacity: 0.15, interactive: false }).addTo(this.drawLayer);
+    this.drawPts.forEach((p, i) => L.circleMarker(p, { radius: i === 0 ? 6 : 4, color: '#c2185b', weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(this.drawLayer));
+  }
+
+  /** Planned buildings: dashed magenta outline, height label; off ones faint. Always shown. */
+  renderPlanned(list: PlannedBuilding[]) {
+    this.plannedLayer.clearLayers();
+    if (!list.length) {
+      this.plannedLayer.remove();
+      return;
+    }
+    this.plannedLayer.addTo(this.map);
+    for (const b of list) {
+      if (b.ring.length < 3) continue;
+      L.polygon(b.ring, {
+        color: b.enabled ? '#c2185b' : '#999',
+        weight: 2,
+        dashArray: '6 4',
+        fillColor: b.enabled ? buildingColor(b.heightM) : '#ccc',
+        fillOpacity: b.enabled ? 0.6 : 0.15,
+        interactive: true,
+      })
+        .bindTooltip(`${b.name} · ${b.heightM} m${b.enabled ? '' : ' (off)'}`, { permanent: true, direction: 'center', className: 'planned-label' })
+        .addTo(this.plannedLayer);
+    }
   }
 
   /** Footprints in view, coloured by height (only from zoom 15: tens of thousands otherwise). */

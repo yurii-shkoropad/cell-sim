@@ -1,3 +1,4 @@
+import type { PlannedBuilding } from '../types';
 import type { LocalProjection } from '../geo';
 
 /**
@@ -71,6 +72,33 @@ class SetBuilder {
       count: this.heights.length,
     };
   }
+}
+
+/**
+ * The OSM buildings plus the user's planned ones that are switched on (they go last; where
+ * they overlap an OSM building the raster keeps the taller). Null when there is neither.
+ */
+export function withPlanned(base: BuildingSet | null, planned: PlannedBuilding[]): BuildingSet | null {
+  const on = planned.filter((p) => p.enabled && p.ring.length >= 3 && p.heightM > 0);
+  if (!on.length) return base;
+  const out = new SetBuilder();
+  const bounds = base ? { ...base.bounds } : { south: 90, west: 180, north: -90, east: -180 };
+  if (base) {
+    out.heights = Array.from(base.heights);
+    out.ringStart = Array.from(base.ringStart);
+    out.ringOffsets = Array.from(base.ringOffsets);
+    out.coords = Array.from(base.coords);
+  }
+  for (const p of on) {
+    out.add(p.heightM, [p.ring]);
+    for (const [la, ln] of p.ring) {
+      bounds.south = Math.min(bounds.south, la - 0.001);
+      bounds.north = Math.max(bounds.north, la + 0.001);
+      bounds.west = Math.min(bounds.west, ln - 0.0015);
+      bounds.east = Math.max(bounds.east, ln + 0.0015);
+    }
+  }
+  return out.build(bounds);
 }
 
 /** Join open ways into closed rings by matching endpoints (OSM multipolygon members). */
