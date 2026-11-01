@@ -148,9 +148,16 @@ function plannedSection(app: App, render: () => void): HTMLElement {
     );
   });
   return section('Planned buildings',
-    h('p', { class: 'hint' }, wi
-      ? 'Draw a future building and set its height: sites trace their paths through it like any OSM building (shadow behind it, indoor loss inside). Untick it to see coverage before it is built.'
-      : 'With Hata a planned building only adds indoor loss inside its footprint. To forecast its shadow on coverage, choose the Walfisch–Ikegami model above.'),
+    h('p', { class: 'hint' }, 'Draw a future building and set its height: with the Walfisch–Ikegami model sites trace their paths through it like any OSM building (shadow behind it, indoor loss inside). Untick it to see coverage before it is built.'),
+    !wi && list.some((b) => b.enabled)
+      ? h('div', { class: 'callout' },
+          h('p', null, 'The Hata model in use ignores building geometry: these buildings only add indoor loss inside their footprint and cast no shadow. Switch to the building model to forecast their effect.'),
+          button('Use building model', () => {
+            store.useBuildingModel();
+            render();
+          }, 'primary'),
+        )
+      : '',
     numField('Height of new buildings', () => newBuildingHeightM, (v) => (newBuildingHeightM = Math.max(1, v)), { min: 1, max: 500, step: 1, unit: 'm' }),
     h('div', { class: 'row' }, drawBtn),
     ...rows,

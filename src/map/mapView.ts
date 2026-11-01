@@ -734,7 +734,7 @@ export class MapView {
         weight: 2,
         dashArray: '6 4',
         fillColor: b.enabled ? buildingColor(b.heightM) : '#ccc',
-        fillOpacity: b.enabled ? 0.6 : 0.15,
+        fillOpacity: b.enabled ? 0.3 : 0.1, // light: the heatmap inside stays readable
         interactive: true,
       })
         .bindTooltip(`${b.name} · ${b.heightM} m${b.enabled ? '' : ' (off)'}`, { permanent: true, direction: 'center', className: 'planned-label' })
