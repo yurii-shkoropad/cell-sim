@@ -246,7 +246,12 @@ export class UserInspector {
     const ca = this.app.store.scenario.settings.ca;
     const ctx = this.app.ctx();
     if (!ca.enabled || u.serving < 0 || ctx.cells[u.serving].tech === 'GSM') return '';
-    if (!u.scells.length) return kv('Carrier aggr.', u.session?.kind === 'data' && !this.app.engine.onWifi(u) ? 'PCell only (no other carrier above the SCell threshold)' : 'data sessions only');
+    if (!u.scells.length) {
+      const why = !(u.session?.kind === 'data' && !this.app.engine.onWifi(u)) ? 'data sessions only'
+        : this.app.engine.caCarriers(u).length ? 'PCell only (see candidates below)'
+        : `PCell only: no other ${ctx.cells[u.serving].tech} band heard`;
+      return kv('Carrier aggr.', why);
+    }
     const scThr = u.scellThr.reduce((a, b) => a + b, 0);
     const parts = u.scells.map((i, k) => `${ctx.cells[i].name} ${ctx.cells[i].freqMHz} MHz, SINR ${fmt(u.scellSinr[k], 1)} dB, ${fmt(u.scellThr[k], 1)} Mbps`);
     return kv('Carrier aggr.', `${1 + u.scells.length} CC · PCell ${fmt(u.thrMbps - scThr, 1)} Mbps + ${parts.join(' + ')}`);
@@ -255,9 +260,16 @@ export class UserInspector {
   /** Other carriers of the PCell's RAT and why each is (not) aggregated. */
   private caTable(u: SimUser): HTMLElement | string {
     if (!this.app.store.scenario.settings.ca.enabled) return '';
-    const rows = this.app.engine.caCarriers(u);
-    if (!rows.length) return '';
     const ctx = this.app.ctx();
+    if (u.serving < 0 || ctx.cells[u.serving].tech === 'GSM') return '';
+    const rows = this.app.engine.caCarriers(u);
+    if (!rows.length) {
+      const pc = ctx.cells[u.serving];
+      return h('div', null,
+        h('h4', null, 'Carrier aggregation candidates'),
+        h('p', { class: 'hint' }, `None: every ${pc.tech} cell this phone hears is on ${pc.freqMHz} MHz, the serving cell's own carrier. Carrier aggregation needs another band, e.g. station → Configure → “Add carrier on this site”.`),
+      );
+    }
     return h('div', null,
       h('h4', null, 'Carrier aggregation candidates'),
       h('table', { class: 'meas' },
