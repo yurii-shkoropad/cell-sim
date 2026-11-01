@@ -21,14 +21,26 @@ const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16
 
 const stops = (pairs: [number, string][]): ColorStop[] => pairs.map(([v, c]) => ({ v, c: hex(c) }));
 
-/** LTE/NR RSRP, dBm: the drive-test classes (QGIS "RSRP main zone"), so maps compare 1:1. */
-export const RSRP_SCALE: Scale = {
-  title: 'RSRP',
-  unit: 'dBm',
-  stops: stops([[-145, '#e3201b'], [-120, '#f0901e'], [-110, '#f2f20d'], [-100, '#3ed43e'], [-90, '#2e8b57'], [-80, '#2fa7e0'], [-70, '#1414c8'], [-40, '#1414c8']]),
-  ticks: [-145, -120, -110, -100, -90, -80, -70, -40],
-  classes: true,
-};
+export type RsrpPalette = 'drive-test' | 'classic';
+export const RSRP_PALETTES: [RsrpPalette, string][] = [['drive-test', 'Drive test (QGIS classes)'], ['classic', 'Classic (purple → blue)']];
+
+/**
+ * LTE/NR RSRP, dBm. 'drive-test': the students' QGIS "RSRP main zone" classes, so maps
+ * compare 1:1 (the top class is a bright blue: a deep blue turns violet under the
+ * semi-transparent overlay). 'classic': the original palette. Either as flat classes
+ * between the stops, or as a smooth gradient through the class colours.
+ */
+export function rsrpScale(palette: RsrpPalette, smooth: boolean): Scale {
+  if (palette === 'drive-test') {
+    return smooth
+      ? { title: 'RSRP', unit: 'dBm', stops: stops([[-145, '#e3201b'], [-127, '#e3201b'], [-115, '#f0901e'], [-105, '#f2f20d'], [-95, '#3ed43e'], [-85, '#2e8b57'], [-75, '#2fa7e0'], [-60, '#0050ff'], [-40, '#0050ff']]), ticks: [-140, -120, -100, -80, -60, -40] }
+      : { title: 'RSRP', unit: 'dBm', stops: stops([[-145, '#e3201b'], [-120, '#f0901e'], [-110, '#f2f20d'], [-100, '#3ed43e'], [-90, '#2e8b57'], [-80, '#2fa7e0'], [-70, '#0050ff'], [-40, '#0050ff']]), ticks: [-145, -120, -110, -100, -90, -80, -70, -40], classes: true };
+  }
+  const classic: [number, string][] = [[-130, '#5b1a8c'], [-120, '#c2185b'], [-110, '#e53935'], [-100, '#fb8c00'], [-90, '#fdd835'], [-80, '#7cb342'], [-70, '#1b7f3b'], [-60, '#0b5394']];
+  return smooth
+    ? { title: 'RSRP', unit: 'dBm', stops: stops(classic), ticks: [-130, -120, -110, -100, -90, -80, -70, -60] }
+    : { title: 'RSRP', unit: 'dBm', stops: stops([...classic, [-40, '#0b5394']]), ticks: [-130, -120, -110, -100, -90, -80, -70, -60, -40], classes: true };
+}
 
 /** GSM RxLev, dBm (per carrier, so ~30 dB above RSRP). */
 export const RXLEV_SCALE: Scale = {

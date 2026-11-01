@@ -1,4 +1,5 @@
 import type { BaseStation, Scenario, Settings, Tech } from '../types';
+import type { RsrpPalette } from '../map/colors';
 import { areaAround, generateUsers, mulberry32, templateFromSettings } from '../sim/population';
 import { DEFAULT_CENTER, defaultScenario, defaultSettings, defaultWifi } from './defaults';
 
@@ -18,6 +19,9 @@ export interface LayerState {
   showBuildings: boolean;
   /** Wi-Fi APs and their association range. */
   showWifi: boolean;
+  /** RSRP heatmap colours, and smooth gradient instead of flat classes (remembered per browser). */
+  rsrpPalette: RsrpPalette;
+  rsrpSmooth: boolean;
 }
 
 /** 'model': the path-loss model was switched from outside the Radio panel (it re-renders). */
@@ -25,6 +29,24 @@ type EventName = 'network' | 'settings' | 'selection' | 'layers' | 'scenario' | 
 type Listener = () => void;
 
 const STORAGE_KEY = 'radio-sim.scenario.v1';
+const RSRP_LOOK_KEY = 'radio-sim.rsrp-look';
+
+function loadRsrpLook(): { rsrpPalette: RsrpPalette; rsrpSmooth: boolean } {
+  try {
+    const v = JSON.parse(localStorage.getItem(RSRP_LOOK_KEY) ?? '{}') as Partial<LayerState>;
+    return { rsrpPalette: v.rsrpPalette === 'classic' ? 'classic' : 'drive-test', rsrpSmooth: v.rsrpSmooth === true };
+  } catch {
+    return { rsrpPalette: 'drive-test', rsrpSmooth: false };
+  }
+}
+
+export function saveRsrpLook(l: LayerState) {
+  try {
+    localStorage.setItem(RSRP_LOOK_KEY, JSON.stringify({ rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth }));
+  } catch {
+    /* storage unavailable: the choice lasts for this session */
+  }
+}
 
 /** Central app state with a tiny pub/sub. */
 export class Store {
@@ -42,6 +64,7 @@ export class Store {
     showRoads: false,
     showBuildings: false,
     showWifi: true,
+    ...loadRsrpLook(),
   };
   private listeners = new Map<EventName, Set<Listener>>();
   private saveTimer = 0;

@@ -105,7 +105,7 @@ Only one inspector is open at a time.
 - **Wi-Fi:** AP markers with dashed association-range circles, users carried over Wi-Fi drawn in purple,
   links to their AP, Wi-Fi offload share and Wi-Fi user tiles, a cellular vs Wi-Fi traffic chart, and Wi-Fi
   join/leave events.
-- **Map layers:** signal level (RSRP in the drive-test classes −145/−120/−110/−100/−90/−80/−70/−40 dBm, or RxLev), best server, SINR, peak DL throughput, and modulation reached. Each can
+- **Map layers:** signal level (RSRP or RxLev; RSRP colours selectable in the Layers tab: the drive-test classes −145/−120/−110/−100/−90/−80/−70/−40 dBm or the classic palette, as flat classes or a smooth gradient), best server, SINR, peak DL throughput, and modulation reached. Each can
   be filtered by operator and RAT, with a hover readout. Further overlays show sectors, users
   (coloured by state), user-to-cell links and the road graph.
 - **KPI tiles:** coverage, handover success, ping-pong, drop rate, block rate, mean and cell-edge

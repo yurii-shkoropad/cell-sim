@@ -7,7 +7,7 @@ import { PATH_COND_LABEL } from '../radio/buildingPaths';
 /** Unknown, LOS, NLOS, indoor. */
 const COND_COLORS = ['#888888', '#1baf7a', '#eb6834', '#4a3aa7', '#9ec5e8'];
 import { isolateFromMap } from './mapView';
-import { colorAt, cssGradient, parseColor, RSRP_SCALE, RXLEV_SCALE, SINR_SCALE, THR_SCALE, type Scale } from './colors';
+import { colorAt, cssGradient, parseColor, rsrpScale, RXLEV_SCALE, SINR_SCALE, THR_SCALE, type Scale } from './colors';
 import type { HeatmapRequest, HeatmapResult } from './heatmap.worker';
 
 /** Extra margin rendered outside the viewport so small pans don't show gaps. */
@@ -142,7 +142,7 @@ export class HeatmapLayer {
   }
 
   scale(kind: HeatmapKind = this.store.layers.heatmap): Scale | null {
-    if (kind === 'rsrp') return this.store.layers.techFilter === 'GSM' ? RXLEV_SCALE : RSRP_SCALE;
+    if (kind === 'rsrp') return this.store.layers.techFilter === 'GSM' ? RXLEV_SCALE : rsrpScale(this.store.layers.rsrpPalette, this.store.layers.rsrpSmooth);
     if (kind === 'sinr') return SINR_SCALE;
     if (kind === 'throughput') return THR_SCALE;
     return null;
@@ -260,7 +260,8 @@ export class HeatmapLayer {
         s.textContent = String(t);
         ticks.appendChild(s);
       }
-      el.appendChild(ticks);
+      // Flat classes get a labelled class list instead of the (crowded) tick numbers.
+      if (!scale.classes) el.appendChild(ticks);
       if (scale.classes) {
         // Class list, strongest first, in the drive-test (QGIS) notation.
         const row = document.createElement('div');

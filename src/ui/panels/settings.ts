@@ -1,5 +1,7 @@
 import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { BUILDING_LEGEND } from '../../map/mapView';
+import { RSRP_PALETTES } from '../../map/colors';
+import { saveRsrpLook } from '../../state/store';
 import { TECHS, type CaSettings, type Tech, type TechThresholds } from '../../types';
 import type { App } from '../app';
 import { button, checkField, clear, h, numField, section, selectField } from '../dom';
@@ -264,6 +266,7 @@ export function layersPanel(app: App): HTMLElement {
           l.heatmap = v;
           changed(true);
           app.mapView.renderSectors();
+          render(); // layer-specific options
         }),
         selectField('Operator', [['all', 'All operators'], ...store.scenario.operators.map((o) => [o.id, o.name] as [string, string])], () => l.operatorFilter, (v) => {
           l.operatorFilter = v;
@@ -275,9 +278,23 @@ export function layersPanel(app: App): HTMLElement {
           changed(true);
           app.mapView.renderSectors();
         }),
-        l.heatmap === 'condition' && store.scenario.settings.radio.model !== 'cost231-wi'
+        l.heatmap === 'rsrp'
+          ? h('div', null,
+              selectField('RSRP colours', RSRP_PALETTES, () => l.rsrpPalette, (v) => {
+                l.rsrpPalette = v;
+                saveRsrpLook(l);
+                changed(false);
+              }, 'Drive test: the same classes and colours as the students’ QGIS “RSRP main zone” layer. GSM RxLev keeps its own scale.'),
+              checkField('Smooth gradient', () => l.rsrpSmooth, (v) => {
+                l.rsrpSmooth = v;
+                saveRsrpLook(l);
+                changed(false);
+              }, 'Off: flat colour classes (as in QGIS). On: colours blend continuously between the classes.'),
+            )
+          : '',
+        l.heatmap === 'condition' && store.scenario.settings.radio.model !== 'cost231-wi' && !app.ctx().indoor
           ? h('div', { class: 'callout' },
-              h('p', null, 'This layer needs the building-aware path-loss model: with Hata there are no buildings, so there is no LOS / NLOS / indoor to show.'),
+              h('p', null, 'No building footprints are loaded, so Hata cannot tell indoor from outdoor; LOS / NLOS needs the building-aware model.'),
               button('Use building model', () => {
                 store.useBuildingModel();
                 render();
