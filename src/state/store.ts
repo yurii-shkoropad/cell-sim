@@ -22,27 +22,41 @@ export interface LayerState {
   /** RSRP heatmap colours, and smooth gradient instead of flat classes (remembered per browser). */
   rsrpPalette: RsrpPalette;
   rsrpSmooth: boolean;
+  /** Sector wedge colours (remembered per browser). */
+  sectorPalette: SectorPalette;
 }
+
+/** 'operator': operator colour (open station in cell colours); 'cell': each cell its own colour; 'rgb': by sector number. */
+export type SectorPalette = 'operator' | 'cell' | 'rgb';
+export const SECTOR_PALETTES: [SectorPalette, string][] = [['operator', 'Operator colour'], ['cell', 'Per cell (unique colours)'], ['rgb', 'By sector: S1 red, S2 blue, S3 green']];
 
 /** 'model': the path-loss model was switched from outside the Radio panel (it re-renders). */
 type EventName = 'network' | 'settings' | 'selection' | 'layers' | 'scenario' | 'users' | 'model';
 type Listener = () => void;
 
 const STORAGE_KEY = 'radio-sim.scenario.v1';
-const RSRP_LOOK_KEY = 'radio-sim.rsrp-look';
+const VIEW_PREFS_KEY = 'radio-sim.rsrp-look';
 
-function loadRsrpLook(): { rsrpPalette: RsrpPalette; rsrpSmooth: boolean } {
+type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette'>;
+
+function loadViewPrefs(): ViewPrefs {
+  const d: ViewPrefs = { rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator' };
   try {
-    const v = JSON.parse(localStorage.getItem(RSRP_LOOK_KEY) ?? '{}') as Partial<LayerState>;
-    return { rsrpPalette: v.rsrpPalette === 'classic' ? 'classic' : 'drive-test', rsrpSmooth: v.rsrpSmooth === true };
+    const v = JSON.parse(localStorage.getItem(VIEW_PREFS_KEY) ?? '{}') as Partial<LayerState>;
+    return {
+      rsrpPalette: v.rsrpPalette === 'classic' ? 'classic' : d.rsrpPalette,
+      rsrpSmooth: v.rsrpSmooth === true,
+      sectorPalette: SECTOR_PALETTES.some(([k]) => k === v.sectorPalette) ? v.sectorPalette! : d.sectorPalette,
+    };
   } catch {
-    return { rsrpPalette: 'drive-test', rsrpSmooth: false };
+    return d;
   }
 }
 
-export function saveRsrpLook(l: LayerState) {
+/** Remember the colour choices (heatmap and sectors) in this browser. */
+export function saveViewPrefs(l: LayerState) {
   try {
-    localStorage.setItem(RSRP_LOOK_KEY, JSON.stringify({ rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth }));
+    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify({ rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette }));
   } catch {
     /* storage unavailable: the choice lasts for this session */
   }
@@ -64,7 +78,7 @@ export class Store {
     showRoads: false,
     showBuildings: false,
     showWifi: true,
-    ...loadRsrpLook(),
+    ...loadViewPrefs(),
   };
   private listeners = new Map<EventName, Set<Listener>>();
   private saveTimer = 0;

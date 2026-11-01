@@ -31,6 +31,9 @@ function userStyle(u: SimUser, onWifi: boolean): L.CircleMarkerOptions {
   const stroke = u.mode === 'drive' ? '#222' : u.mode === 'static' ? '#f2b705' : '#fff';
   return { fillColor: fill, color: stroke, weight: u.mode === 'static' ? 2 : 1, radius: u.session ? 5 : 3.5 };
 }
+/** 'By sector' palette: S1 red, S2 blue, S3 green, then extra colours for more sectors. */
+const SECTOR_RGB = ['#e53935', '#1e5bd8', '#2e9e44', '#f39c12', '#8e44ad', '#16a2a6'];
+
 const escapeHtml = (t: string) => t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 /**
  * Keep clicks inside a floating panel from reaching the map. Leaflet's own
@@ -80,6 +83,18 @@ export class MapView {
   onAddSite: (lat: number, lng: number) => void = () => {};
   onAddUser: (lat: number, lng: number) => void = () => {};
   onAddAp: (lat: number, lng: number) => void = () => {};
+  /**
+   * Colour of sector `i` of a station per the Layers choice (the station editor's dots use
+   * it too, so they match the wedges). Operator palette: the open station in cell colours.
+   */
+  sectorColor(bs: BaseStation, i: number, open = this.store.selectedStationId === bs.id): string {
+    const pal = this.store.layers.sectorPalette;
+    if (pal === 'rgb') return SECTOR_RGB[i % SECTOR_RGB.length];
+    const cell = this.ctx?.cells.find((c) => c.sectorId === bs.sectors[i]?.id)?.color;
+    if (pal === 'cell' || open) return cell ?? '#bbb';
+    return this.store.scenario.operators.find((o) => o.id === bs.operatorId)?.color ?? '#555';
+  }
+
   /** Sector emphasised on the map (hovered / edited row in the station editor). */
   private highlightSectorId: string | null = null;
   setSectorHighlight(id: string | null) {
@@ -318,12 +333,10 @@ export class MapView {
       const dim = !visible(bs);
       const opColor = ops.get(bs.operatorId)?.color ?? '#555';
       const selected = this.store.selectedStationId === bs.id;
-      // The open station shows each sector in its cell colour (as in its Configure tab).
-      const ownColors = byServer || selected;
       // Stagger lengths by technology so co-located 2G/4G/5G sectors are distinguishable.
       const len = lenM * (bs.tech === 'GSM' ? 1.25 : bs.tech === 'LTE' ? 1 : 0.8);
       for (const s of bs.sectors) {
-        const color = ownColors ? (cellColor.get(s.id) ?? opColor) : opColor;
+        const color = byServer ? (cellColor.get(s.id) ?? opColor) : this.sectorColor(bs, bs.sectors.indexOf(s), selected);
         const hl = s.id === this.highlightSectorId;
         const style: L.PathOptions = {
           pane: 'sectorPane',
@@ -371,7 +384,7 @@ export class MapView {
     for (const s of bs.sectors) {
       if (!s.enabled || !bs.enabled) continue;
       const fp = verticalFootprint(bs.heightM, hm, s.tilt, s.vBeamwidth);
-      const color = cellColor.get(s.id) ?? '#000';
+      const color = this.store.layers.heatmap === 'server' ? (cellColor.get(s.id) ?? '#000') : this.sectorColor(bs, bs.sectors.indexOf(s), true);
       const half = Math.min(s.hBeamwidth, 360) / 2;
       const capped = !Number.isFinite(fp.far) || fp.far > FOOTPRINT_MAX_M;
       const far = Math.min(fp.far, FOOTPRINT_MAX_M);

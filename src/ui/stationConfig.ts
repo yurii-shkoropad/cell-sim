@@ -69,8 +69,7 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
   const renderProfile = () => {
     clear(profileHost);
     if (state.profileSector >= bs.sectors.length) state.profileSector = 0;
-    const ctx = app.ctx();
-    const color = (id: string) => ctx.cells.find((c) => c.sectorId === id)?.color ?? '#2a78d6';
+    const color = (id: string) => app.mapView.sectorColor(bs, bs.sectors.findIndex((x) => x.id === id), true);
     const hm = store.scenario.settings.radio.ueHeightM;
     const s = bs.sectors[state.profileSector];
     const fp = verticalFootprint(bs.heightM, hm, s.tilt, s.vBeamwidth);
@@ -316,8 +315,9 @@ function hoTable(app: App, bs: BaseStation, changed: () => void): HTMLElement {
  * open, best-server layer, links). Hovering or editing the row highlights the wedge.
  */
 function sectorTag(app: App, s: Sector, i: number): { tag: HTMLElement; hover: (row: HTMLElement) => void } {
-  const color = app.ctx().cells.find((c) => c.sectorId === s.id)?.color ?? '#bbb';
-  const tag = h('span', { class: 'sec-tag', title: s.enabled ? 'Cell colour on the map' : 'Sector off' }, h('span', { class: 'dot', style: `background:${color}` }), `S${i + 1}`);
+  const bs = app.store.scenario.stations.find((b) => b.sectors.includes(s));
+  const color = bs ? app.mapView.sectorColor(bs, i, true) : '#bbb';
+  const tag = h('span', { class: 'sec-tag', title: s.enabled ? 'Sector colour on the map (Layers → Sector colours)' : 'Sector off' }, h('span', { class: 'dot', style: `background:${color}` }), `S${i + 1}`);
   const hover = (row: HTMLElement) => {
     const on = () => app.mapView.setSectorHighlight(s.id);
     const off = () => app.mapView.setSectorHighlight(null);

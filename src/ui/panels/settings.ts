@@ -1,7 +1,7 @@
 import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { BUILDING_LEGEND } from '../../map/mapView';
 import { RSRP_PALETTES } from '../../map/colors';
-import { saveRsrpLook } from '../../state/store';
+import { saveViewPrefs, SECTOR_PALETTES } from '../../state/store';
 import { TECHS, type CaSettings, type Tech, type TechThresholds } from '../../types';
 import type { App } from '../app';
 import { button, checkField, clear, h, numField, section, selectField } from '../dom';
@@ -282,12 +282,12 @@ export function layersPanel(app: App): HTMLElement {
           ? h('div', null,
               selectField('RSRP colours', RSRP_PALETTES, () => l.rsrpPalette, (v) => {
                 l.rsrpPalette = v;
-                saveRsrpLook(l);
+                saveViewPrefs(l);
                 changed(false);
               }, 'Drive test: the same classes and colours as the students’ QGIS “RSRP main zone” layer. GSM RxLev keeps its own scale.'),
               checkField('Smooth gradient', () => l.rsrpSmooth, (v) => {
                 l.rsrpSmooth = v;
-                saveRsrpLook(l);
+                saveViewPrefs(l);
                 changed(false);
               }, 'Off: flat colour classes (as in QGIS). On: colours blend continuously between the classes.'),
             )
@@ -313,6 +313,12 @@ export function layersPanel(app: App): HTMLElement {
           l.showSectors = v;
           app.mapView.renderSectors();
         }),
+        selectField('Sector colours', SECTOR_PALETTES, () => l.sectorPalette, (v) => {
+          l.sectorPalette = v;
+          saveViewPrefs(l);
+          app.mapView.renderSectors();
+          store.emit('selection'); // the open station editor re-colours its sector dots
+        }, 'Best-server heatmap: sectors always use the cell colours of the heatmap.'),
         checkField('Users', () => l.showUsers, (v) => {
           l.showUsers = v;
           app.mapView.renderUsers(app.engine);
