@@ -106,6 +106,19 @@ describe('link budget', () => {
     expect(rxLevel(ctx, c, 0, d)).toBeCloseTo(expected, 6);
   });
 
+  it('a sector Tx power override shifts only that sector, dB for dB', () => {
+    const scn = defaultScenario();
+    const bs = makeStation(presetByKey('lte1800'), scn.center.lat, scn.center.lng, 'op1', 'T', { sectors: 3 });
+    scn.stations = [bs];
+    const before = buildRadioContext(scn);
+    bs.sectors[1].txPowerDbm = bs.txPowerDbm + 3;
+    const after = buildRadioContext(scn);
+    expect(after.cells[1].refTxDbm - before.cells[1].refTxDbm).toBeCloseTo(3, 9);
+    expect(rxLevel(after, after.cells[1], 300, -200) - rxLevel(before, before.cells[1], 300, -200)).toBeCloseTo(3, 9);
+    expect(after.cells[0].refTxDbm).toBe(before.cells[0].refTxDbm);
+    expect(after.cells[2].refTxDbm).toBe(before.cells[2].refTxDbm);
+  });
+
   it('SINR of a lone cell equals SNR; a co-channel twin at equal level gives ~0 dB', () => {
     const scn = defaultScenario();
     const p = presetByKey('lte1800');

@@ -162,7 +162,7 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
         occBwMHz: occ,
         fLo: s.freqMHz - occ / 2,
         fHi: s.freqMHz + occ / 2,
-        refTxDbm: bs.txPowerDbm - bs.cableLossDb - 10 * Math.log10(units),
+        refTxDbm: (s.txPowerDbm ?? bs.txPowerDbm) - bs.cableLossDb - 10 * Math.log10(units),
         unitsDb: 10 * Math.log10(units),
         gain: s.gain,
         azimuth: s.azimuth,

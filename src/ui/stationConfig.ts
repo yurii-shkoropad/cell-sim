@@ -38,13 +38,19 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
     clear(derived);
     const s0 = bs.sectors[0];
     const ant = antennaType(validAntennaFor(bs.tech, bs.antennaType));
-    const eirp = bs.txPowerDbm - bs.cableLossDb + (s0?.gain ?? 0) + ant.bfGainDb;
-    const lines: string[] = [`EIRP ${fmt(eirp)} dBm (${fmt(Math.pow(10, (eirp - 30) / 10), 0)} W) per sector${ant.bfGainDb ? ` incl. +${ant.bfGainDb} dB beamforming` : ''}`];
+    const eirpOf = (s: Sector) => (s.txPowerDbm ?? bs.txPowerDbm) - bs.cableLossDb + s.gain + ant.bfGainDb;
+    const eirps = bs.sectors.map(eirpOf);
+    const eirp = eirps[0] ?? bs.txPowerDbm - bs.cableLossDb + ant.bfGainDb;
+    const lines: string[] = [
+      eirps.every((e) => Math.abs(e - eirp) < 0.05)
+        ? `EIRP ${fmt(eirp)} dBm (${fmt(Math.pow(10, (eirp - 30) / 10), 0)} W) per sector${ant.bfGainDb ? ` incl. +${ant.bfGainDb} dB beamforming` : ''}`
+        : `EIRP ${eirps.map((e, i) => `S${i + 1} ${fmt(e)}`).join(' · ')} dBm${ant.bfGainDb ? ` (incl. +${ant.bfGainDb} dB beamforming)` : ''}`,
+    ];
     if (bs.tech === 'GSM') lines.push(`${gsmTrafficChannels(bs.trxCount)} TCH per sector (${bs.trxCount} TRX)`);
     else {
       const f = s0?.freqMHz ?? 0;
       const rb = resourceBlocks(bs.tech, bs.bandwidthMHz, f);
-      lines.push(`${rb} RB · RS power/RE at antenna ${fmt(bs.txPowerDbm - bs.cableLossDb - 10 * Math.log10(12 * rb))} dBm`);
+      lines.push(`${rb} RB · RS power/RE at antenna ${fmt((s0?.txPowerDbm ?? bs.txPowerDbm) - bs.cableLossDb - 10 * Math.log10(12 * rb))} dBm${bs.sectors.some((s) => s.txPowerDbm !== undefined) ? ' (sector 1)' : ''}`);
       // Single-UE peak at excellent radio conditions, for orientation.
       const r = store.scenario.settings.radio;
       const ueRx = bs.tech === 'NR' ? store.scenario.settings.users.ueRxNr : store.scenario.settings.users.ueRxLte;
@@ -169,8 +175,8 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
         }),
     numField('Tx power', () => bs.txPowerDbm, (v) => {
       bs.txPowerDbm = v;
-      ch();
-    }, { min: -10, max: 70, step: 0.5, unit: 'dBm', title: 'Per sector, at the radio output (before feeder loss)' }),
+      structural(); // sector rows show it as their default
+    }, { min: -10, max: 70, step: 0.5, unit: 'dBm', title: 'Per sector, at the radio output (before feeder loss). Sectors can override it (Tx column in the sector table).' }),
     numField('Antenna height', () => bs.heightM, (v) => {
       bs.heightM = v;
       ch();
@@ -198,7 +204,7 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
     derived,
     h('h4', null, 'Sectors'),
     h('div', { class: 'sector-grid' },
-      h('div', { class: 'sg-head' }, ...['', 'On', 'Az°', 'H-BW°', 'V-BW°', 'Tilt°', 'Gain dBi', 'F/B dB', 'Freq MHz', bs.tech === 'GSM' ? 'BSIC' : 'PCI', ''].map((t) => h('span', null, t))),
+      h('div', { class: 'sg-head' }, ...['', 'On', 'Az°', 'H-BW°', 'V-BW°', 'Tilt°', 'Gain dBi', 'F/B dB', 'Tx dBm', 'Freq MHz', bs.tech === 'GSM' ? 'BSIC' : 'PCI', ''].map((t) => h('span', null, t))),
       ...bs.sectors.map((s, i) => sectorRow(bs, s, i, ch, structural, sectorTag(app, s, i))),
     ),
     h('div', { class: 'row' },
@@ -366,6 +372,19 @@ function sectorRow(bs: BaseStation, s: Sector, i: number, changed: () => void, s
     num(() => s.tilt, (v) => (s.tilt = v), 0.5, -10, 30),
     num(() => s.gain, (v) => (s.gain = v), 0.5, -10, 35),
     num(() => s.frontToBack, (v) => (s.frontToBack = v), 1, 0, 50),
+    (() => {
+      // Empty = the station's Tx power (placeholder); a value overrides it for this sector.
+      const input = h('input', { type: 'number', step: '0.5', placeholder: String(bs.txPowerDbm), value: s.txPowerDbm === undefined ? '' : String(s.txPowerDbm), title: `Tx power of this sector, dBm (empty = station ${bs.txPowerDbm} dBm)`, onchange: () => {
+        const v = parseFloat(input.value);
+        if (input.value.trim() === '' || !Number.isFinite(v)) delete s.txPowerDbm;
+        else s.txPowerDbm = Math.min(70, Math.max(-10, v));
+        input.value = s.txPowerDbm === undefined ? '' : String(s.txPowerDbm);
+        input.classList.toggle('set', s.txPowerDbm !== undefined);
+        changed();
+      } });
+      if (s.txPowerDbm !== undefined) input.classList.add('set');
+      return input;
+    })(),
     h('span', { class: 'freq' }, num(() => s.freqMHz, (v) => (s.freqMHz = v), bs.tech === 'GSM' ? 0.2 : 0.1, 100, 6000), chLabel),
     num(() => s.pci, (v) => (s.pci = Math.round(v)), 1, 0, bs.tech === 'GSM' ? 63 : bs.tech === 'LTE' ? 503 : 1007),
     h('button', { class: 'btn icon', type: 'button', title: 'Remove sector', onclick: () => {

@@ -34,6 +34,8 @@ export interface Sector {
   /** LTE/NR PCI, or GSM BSIC (0..63). */
   pci: number;
   enabled: boolean;
+  /** Transmit power of this sector, dBm (before feeder loss); missing = the station's Tx power. */
+  txPowerDbm?: number;
   /** Per-cell handover parameters; a missing field uses the global value for the RAT. */
   ho?: SectorHo;
 }
