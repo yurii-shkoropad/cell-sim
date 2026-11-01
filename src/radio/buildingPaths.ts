@@ -5,8 +5,9 @@ import { buildingEntryLossDb, orientationLoss, type BuildingEntryType } from './
 export const PATH_GRID = { rays: 720, stepM: 10, steps: 400 } as const; // 0.5°, 10 m, 4 km
 
 /** Path condition stored per sample. */
-export const PathCond = { Unknown: 0, Los: 1, Nlos: 2, Indoor: 3 } as const;
-export const PATH_COND_LABEL = ['—', 'LOS', 'NLOS', 'Indoor'] as const;
+/** Outdoor: Hata path from outside any building (no LOS / NLOS distinction). */
+export const PathCond = { Unknown: 0, Los: 1, Nlos: 2, Indoor: 3, Outdoor: 4 } as const;
+export const PATH_COND_LABEL = ['—', 'LOS', 'NLOS', 'Indoor', 'Outdoor (Hata)'] as const;
 
 export interface StationPaths {
   /** Path loss per sample, dB; NaN where no building data (caller falls back to Hata). */

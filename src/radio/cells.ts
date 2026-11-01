@@ -9,6 +9,7 @@ import { PathCond, pathSampleIndex, type StationPaths } from './buildingPaths';
 import { schedulerInfo, type SchedulerKey } from '../sim/scheduler';
 import { gsmTrafficChannels, occupiedBandwidthMHz, powerUnits, rbBandwidthHz, resourceBlocks } from './presets';
 import { seedFromString, shadowingDb } from './shadowing';
+import { buildingEntryLossDb } from './walfisch';
 
 /**
  * Flattened, serialisable description of one cell (= one sector of a station),
@@ -45,6 +46,8 @@ export interface CellRF {
   plB: number;
   /** Free-space constant 32.45 + 20 log10(f): FSPL = fsConst + 20 log10(d_km). */
   fsConst: number;
+  /** Building entry loss at this cell's frequency (ITU-R P.2109), added to Hata for indoor points, dB. */
+  belDb: number;
   noiseDbm: number;
   pci: number;
   rbs: number;
@@ -86,6 +89,25 @@ export interface RadioContext {
   paths: { loss: Float32Array[]; cond: Uint8Array[]; version: number } | null;
   /** Enabled Wi-Fi access points. */
   wifi: WifiRF[];
+  /** OSM building footprints (when loaded): points inside get building entry loss on Hata paths. */
+  indoor: IndoorMask | null;
+}
+
+/** Building footprints rasterised on the local grid: mask[row * nx + col] = 1 inside a building. */
+export interface IndoorMask {
+  x0: number;
+  y0: number;
+  res: number;
+  nx: number;
+  ny: number;
+  mask: Uint8Array;
+  version: number;
+}
+
+export function isIndoor(m: IndoorMask, x: number, y: number): boolean {
+  const col = Math.floor((x - m.x0) / m.res);
+  const row = Math.floor((y - m.y0) / m.res);
+  return col >= 0 && row >= 0 && col < m.nx && row < m.ny && m.mask[row * m.nx + col] === 1;
 }
 
 /** Supplies a station's building path map, or null to use Hata for it. */
@@ -99,7 +121,7 @@ export function cellColor(idx: number): string {
   return `hsl(${h.toFixed(0)}, 70%, 50%)`;
 }
 
-export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVersion = 0): RadioContext {
+export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVersion = 0, indoor: IndoorMask | null = null): RadioContext {
   const r = scn.settings.radio;
   const proj = new LocalProjection(scn.center.lat, scn.center.lng);
   const opIndex = new Map(scn.operators.map((o, i) => [o.id, i]));
@@ -151,6 +173,7 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
         plA: pl.A,
         plB: pl.B,
         fsConst: 32.45 + 20 * Math.log10(s.freqMHz),
+        belDb: buildingEntryLossDb(s.freqMHz, r.buildingEntry),
         noiseDbm: -174 + 10 * Math.log10(occ * 1e6) + r.ueNoiseFigureDb,
         pci: s.pci,
         rbs: resourceBlocks(bs.tech, bw, s.freqMHz),
@@ -187,6 +210,7 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
     lng0: scn.center.lng,
     paths: pathLoss.length ? { loss: pathLoss, cond: pathCond, version: pathsVersion } : null,
     wifi: buildWifiRF(scn),
+    indoor: r.buildingEntry === 'none' ? null : indoor,
   };
 }
 
@@ -234,20 +258,28 @@ export function rxLevel(ctx: RadioContext, c: CellRF, x: number, y: number): num
     const hata = c.plA + c.plB * ld;
     const fs = c.fsConst + 20 * ld;
     pl = hata > fs ? hata : fs;
+    // Hata is a street-level median: a UE inside an OSM footprint also pays the entry loss.
+    if (ctx.indoor && isIndoor(ctx.indoor, x, y)) pl += c.belDb;
   }
   const sh = ctx.shadowing ? shadowingDb(c.siteSeed, x, y, ctx.sigma, ctx.decorr) : 0;
   return c.refTxDbm + c.gain + c.bfGainDb + att - pl - sh;
 }
 
-/** LOS / NLOS / indoor for the path from cell c to (x,y), or Unknown when Hata is used there. */
+/**
+ * LOS / NLOS / indoor for the path from cell c to (x,y) with the building model; where Hata
+ * is used, indoor / outdoor from the footprints, or Unknown without building data.
+ */
 export function pathCondition(ctx: RadioContext, c: CellRF, x: number, y: number): number {
-  if (c.pathMap < 0 || !ctx.paths) return PathCond.Unknown;
-  const dx = x - c.x;
-  const dy = y - c.y;
-  let brg = Math.atan2(dx, dy) * DEG;
-  if (brg < 0) brg += 360;
-  const k = pathSampleIndex(Math.sqrt(dx * dx + dy * dy), brg);
-  return k >= 0 ? ctx.paths.cond[c.pathMap][k] : PathCond.Unknown;
+  if (c.pathMap >= 0 && ctx.paths) {
+    const dx = x - c.x;
+    const dy = y - c.y;
+    let brg = Math.atan2(dx, dy) * DEG;
+    if (brg < 0) brg += 360;
+    const k = pathSampleIndex(Math.sqrt(dx * dx + dy * dy), brg);
+    if (k >= 0 && ctx.paths.cond[c.pathMap][k] !== PathCond.Unknown) return ctx.paths.cond[c.pathMap][k];
+  }
+  if (!ctx.indoor) return PathCond.Unknown;
+  return isIndoor(ctx.indoor, x, y) ? PathCond.Indoor : PathCond.Outdoor;
 }
 
 export const dbmToMw = (dbm: number) => Math.pow(10, dbm / 10);

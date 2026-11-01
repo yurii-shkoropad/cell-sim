@@ -10,18 +10,24 @@ export interface Scale {
   /** Map a value to the scale's axis (e.g. log for throughput). */
   axis?: (v: number) => number;
   ticks: number[];
+  /**
+   * Discrete classes instead of a gradient: stop i colours [stops[i].v, stops[i+1].v),
+   * the last stop only closes the top class. Values below the first stop are not drawn.
+   */
+  classes?: boolean;
 }
 
 const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
 const stops = (pairs: [number, string][]): ColorStop[] => pairs.map(([v, c]) => ({ v, c: hex(c) }));
 
-/** LTE/NR RSRP, dBm. */
+/** LTE/NR RSRP, dBm: the drive-test classes (QGIS "RSRP main zone"), so maps compare 1:1. */
 export const RSRP_SCALE: Scale = {
   title: 'RSRP',
   unit: 'dBm',
-  stops: stops([[-130, '#5b1a8c'], [-120, '#c2185b'], [-110, '#e53935'], [-100, '#fb8c00'], [-90, '#fdd835'], [-80, '#7cb342'], [-70, '#1b7f3b'], [-60, '#0b5394']]),
-  ticks: [-130, -120, -110, -100, -90, -80, -70, -60],
+  stops: stops([[-145, '#e3201b'], [-120, '#f0901e'], [-110, '#f2f20d'], [-100, '#3ed43e'], [-90, '#2e8b57'], [-80, '#2fa7e0'], [-70, '#1414c8'], [-40, '#1414c8']]),
+  ticks: [-145, -120, -110, -100, -90, -80, -70, -40],
+  classes: true,
 };
 
 /** GSM RxLev, dBm (per carrier, so ~30 dB above RSRP). */
@@ -50,6 +56,11 @@ export const THR_SCALE: Scale = {
 export function colorAt(scale: Scale, value: number): [number, number, number] {
   const v = scale.axis ? scale.axis(value) : value;
   const s = scale.stops;
+  if (scale.classes) {
+    let i = 0;
+    while (i < s.length - 2 && v >= s[i + 1].v) i++;
+    return s[i].c;
+  }
   if (v <= s[0].v) return s[0].c;
   for (let i = 1; i < s.length; i++) {
     if (v <= s[i].v) {
@@ -66,6 +77,12 @@ export function cssGradient(scale: Scale): string {
   const s = scale.stops;
   const lo = s[0].v;
   const hi = s[s.length - 1].v;
+  const at = (v: number) => (((v - lo) / (hi - lo)) * 100).toFixed(1);
+  if (scale.classes) {
+    // Hard edges: each class is a flat band.
+    const bands = s.slice(0, -1).map((x, i) => `rgb(${x.c.join(',')}) ${at(x.v)}% ${at(s[i + 1].v)}%`);
+    return `linear-gradient(to right, ${bands.join(', ')})`;
+  }
   return `linear-gradient(to right, ${s.map((x) => `rgb(${x.c.join(',')}) ${(((x.v - lo) / (hi - lo)) * 100).toFixed(1)}%`).join(', ')})`;
 }
 

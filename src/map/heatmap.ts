@@ -5,7 +5,7 @@ import { MODULATIONS } from '../radio/modulation';
 import { PATH_COND_LABEL } from '../radio/buildingPaths';
 
 /** Unknown, LOS, NLOS, indoor. */
-const COND_COLORS = ['#888888', '#1baf7a', '#eb6834', '#4a3aa7'];
+const COND_COLORS = ['#888888', '#1baf7a', '#eb6834', '#4a3aa7', '#9ec5e8'];
 import { isolateFromMap } from './mapView';
 import { colorAt, cssGradient, parseColor, RSRP_SCALE, RXLEV_SCALE, SINR_SCALE, THR_SCALE, type Scale } from './colors';
 import type { HeatmapRequest, HeatmapResult } from './heatmap.worker';
@@ -98,6 +98,11 @@ export class HeatmapLayer {
       if (ctx.paths.version === this.sentPathsVersion) ctx = { ...ctx, paths: { loss: [], cond: [], version: ctx.paths.version } };
       else this.sentPathsVersion = ctx.paths.version;
     }
+    // Same for the indoor footprint mask.
+    if (ctx.indoor) {
+      if (ctx.indoor.version === this.sentIndoorVersion) ctx = { ...ctx, indoor: { ...ctx.indoor, mask: new Uint8Array(0) } };
+      else this.sentIndoorVersion = ctx.indoor.version;
+    }
     const req: HeatmapRequest = {
       gen: ++this.gen,
       ctx,
@@ -122,6 +127,7 @@ export class HeatmapLayer {
 
   private pending: { lats: Float64Array; lngs: Float64Array; bounds: L.LatLngBounds } | null = null;
   private sentPathsVersion = -1;
+  private sentIndoorVersion = -1;
   private bounds: L.LatLngBounds | null = null;
 
   private onResult(r: HeatmapResult) {
@@ -161,7 +167,7 @@ export class HeatmapLayer {
       let rgb: [number, number, number] | null = null;
       if (kind === 'rsrp') {
         const v = r.rsrp[k];
-        if (v > -Infinity && v >= (scale!.stops[0].v as number) - 10) rgb = colorAt(scale!, v);
+        if (v > -Infinity && v >= scale!.stops[0].v - (scale!.classes ? 0 : 10)) rgb = colorAt(scale!, v);
       } else if (srv >= 0) {
         if (kind === 'server') rgb = cellRgb[srv] ?? null;
         else if (kind === 'sinr') rgb = colorAt(scale!, r.sinr[k]);
@@ -255,7 +261,21 @@ export class HeatmapLayer {
         ticks.appendChild(s);
       }
       el.appendChild(ticks);
-    } else if (kind === 'condition' && !this.ctx?.paths) {
+      if (scale.classes) {
+        // Class list, strongest first, in the drive-test (QGIS) notation.
+        const row = document.createElement('div');
+        row.className = 'legend-cats';
+        const st = scale.stops;
+        for (let i = st.length - 2; i >= 0; i--) {
+          const sp = document.createElement('span');
+          const sw = document.createElement('i');
+          sw.style.background = `rgb(${st[i].c.join(',')})`;
+          sp.append(sw, `[${st[i].v}, ${st[i + 1].v}${i === st.length - 2 ? ']' : ')'}`);
+          row.appendChild(sp);
+        }
+        el.appendChild(row);
+      }
+    } else if (kind === 'condition' && !this.ctx?.paths && !this.ctx?.indoor) {
       // Nothing to draw: explain why and offer the fix instead of an empty map.
       const wi = this.store.scenario.settings.radio.model === 'cost231-wi';
       head.textContent = wi ? 'Propagation condition: no building data here' : 'Propagation condition needs the building model';
@@ -263,7 +283,7 @@ export class HeatmapLayer {
       note.className = 'legend-note';
       note.textContent = wi
         ? 'Load OSM buildings for this area (Radio tab → Load OSM buildings for current view).'
-        : 'With Hata there are no buildings, so there is no LOS / NLOS / indoor. Switch to COST-231 Walfisch–Ikegami + OSM buildings.';
+        : 'No building footprints loaded (or entry loss set to None), so Hata cannot tell indoor from outdoor, and LOS / NLOS needs the building model. Load OSM buildings (Radio tab) or switch to COST-231 Walfisch–Ikegami + OSM buildings.';
       el.appendChild(note);
       if (!wi) {
         const btn = document.createElement('button');
@@ -277,7 +297,10 @@ export class HeatmapLayer {
     } else if (kind === 'condition') {
       const row = document.createElement('div');
       row.className = 'legend-cats';
-      ([[1, 'LOS (street canyon)'], [2, 'NLOS (blocked by buildings)'], [3, 'Indoor (+ entry loss)']] as [number, string][]).forEach(([k, label]) => {
+      const cats: [number, string][] = this.ctx?.paths
+        ? [[1, 'LOS (street canyon)'], [2, 'NLOS (blocked by buildings)'], [3, 'Indoor (+ entry loss)'], ...(this.ctx.indoor ? [[4, 'Outdoor, beyond traced paths (Hata)'] as [number, string]] : [])]
+        : [[4, 'Outdoor (Hata)'], [3, 'Indoor (Hata + entry loss)']];
+      cats.forEach(([k, label]) => {
         const s = document.createElement('span');
         const i = document.createElement('i');
         i.style.background = COND_COLORS[k];
@@ -287,7 +310,7 @@ export class HeatmapLayer {
       el.appendChild(row);
       const note = document.createElement('div');
       note.className = 'legend-note';
-      note.textContent = this.ctx?.paths ? 'Path from the best server, traced through OSM buildings.' : 'Needs the "COST-231 Walfisch–Ikegami + OSM buildings" model (Radio tab) and loaded buildings.';
+      note.textContent = this.ctx?.paths ? 'Path from the best server, traced through OSM buildings.' : 'Hata: inside an OSM building footprint = indoor (P.2109 entry loss added). For LOS / NLOS use the COST-231 Walfisch–Ikegami + OSM buildings model.';
       el.appendChild(note);
     } else if (kind === 'modulation') {
       const row = document.createElement('div');

@@ -2,7 +2,7 @@ import { LocalProjection } from '../geo';
 import type { BaseStation, Scenario } from '../types';
 import { castStationPaths, type StationPaths } from './buildingPaths';
 import { rasterize, type BuildingRaster, type BuildingSet } from './buildings';
-import type { PathProvider, RadioContext } from './cells';
+import type { IndoorMask, PathProvider, RadioContext } from './cells';
 
 /**
  * Loaded OSM buildings, their raster, and a cache of per-station path maps.
@@ -14,6 +14,7 @@ export class BuildingModel {
   source = '';
   private raster: BuildingRaster | null = null;
   private rasterKey = '';
+  private mask: IndoorMask | null = null;
   private cache = new Map<string, StationPaths>();
   private usedKeys: string[] = [];
   private lastSignature = '';
@@ -27,20 +28,39 @@ export class BuildingModel {
     this.source = source;
     this.raster = null;
     this.rasterKey = '';
+    this.mask = null;
     this.cache.clear();
+  }
+
+  private ensureRaster(scn: Scenario): BuildingRaster {
+    const r = scn.settings.radio;
+    const rk = `${scn.center.lat}|${scn.center.lng}|${r.defaultBuildingHeightM}`;
+    if (!this.raster || rk !== this.rasterKey) {
+      this.raster = rasterize(this.set!, new LocalProjection(scn.center.lat, scn.center.lng), r.defaultBuildingHeightM);
+      this.rasterKey = rk;
+      this.mask = null;
+      this.cache.clear();
+    }
+    return this.raster;
+  }
+
+  /** Building footprints for indoor loss on Hata paths (any model), or null without buildings. */
+  indoorMask(scn: Scenario): IndoorMask | null {
+    if (!this.set) return null;
+    const raster = this.ensureRaster(scn);
+    if (!this.mask) {
+      const mask = new Uint8Array(raster.id.length);
+      for (let k = 0; k < mask.length; k++) mask[k] = raster.id[k] !== 0 ? 1 : 0;
+      this.mask = { x0: raster.x0, y0: raster.y0, res: raster.res, nx: raster.nx, ny: raster.ny, mask, version: raster.version };
+    }
+    return this.mask;
   }
 
   /** Path provider for buildRadioContext, or undefined when the building model isn't in use. */
   provider(scn: Scenario): PathProvider | undefined {
     const r = scn.settings.radio;
     if (!this.set || r.model !== 'cost231-wi') return undefined;
-    const rk = `${scn.center.lat}|${scn.center.lng}|${r.defaultBuildingHeightM}`;
-    if (!this.raster || rk !== this.rasterKey) {
-      this.raster = rasterize(this.set, new LocalProjection(scn.center.lat, scn.center.lng), r.defaultBuildingHeightM);
-      this.rasterKey = rk;
-      this.cache.clear();
-    }
-    const raster = this.raster;
+    const raster = this.ensureRaster(scn);
     this.usedKeys = [];
     this.lastComputeMs = 0;
     this.lastComputed = 0;

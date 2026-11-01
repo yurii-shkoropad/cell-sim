@@ -23,7 +23,7 @@ export function radioPanel(app: App): HTMLElement {
           set();
           render();
         }),
-        r.model === 'cost231-wi' ? buildingsBlock(app, set) : '',
+        r.model === 'cost231-wi' ? buildingsBlock(app, set) : indoorBlock(app, set),
         numField('UE antenna height', () => r.ueHeightM, (v) => {
           r.ueHeightM = v;
           set();
@@ -153,6 +153,38 @@ function buildingsBlock(app: App, changed: () => void): HTMLElement {
       app.mapView.setBuildings(app.buildings().set, v);
       changed();
     }, { min: 2, max: 100, step: 1, unit: 'm', title: 'For OSM buildings without height, levels or a recognised type' }),
+    status,
+    h('div', { class: 'row' }, btn),
+  );
+}
+
+/** Hata models: indoor loss for UEs inside OSM building footprints. */
+function indoorBlock(app: App, changed: () => void): HTMLElement {
+  const r = app.store.scenario.settings.radio;
+  const status = h('div', { class: 'status-line' });
+  const upd = () => {
+    const b = app.buildings();
+    status.textContent = r.buildingEntry === 'none' ? 'Entry loss off: every point is treated as outdoor.'
+      : b.set ? `${b.set.count} OSM buildings loaded (${b.source}): points inside a footprint are indoor.` : 'No buildings loaded: every point is treated as outdoor.';
+  };
+  upd();
+  app.onLiveTick(upd);
+  const btn = button('Load OSM buildings for current view', async () => {
+    btn.disabled = true;
+    try {
+      await app.loadBuildings();
+    } finally {
+      btn.disabled = false;
+      upd();
+    }
+  });
+  return h('div', { class: 'sub-block' },
+    h('p', { class: 'hint' }, 'Hata gives the median loss to a street-level UE. A UE (or heatmap point) inside an OSM building footprint also gets the building entry loss at the cell’s frequency; outdoors stays plain Hata. LOS / NLOS needs the Walfisch–Ikegami building model.'),
+    selectField('Indoor (building entry) loss', [['traditional', 'Traditional building (ITU-R P.2109)'], ['thermal', 'Thermally efficient (P.2109)'], ['none', 'None (all outdoor)']], () => r.buildingEntry, (v) => {
+      r.buildingEntry = v;
+      changed();
+      upd();
+    }),
     status,
     h('div', { class: 'row' }, btn),
   );

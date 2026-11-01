@@ -105,7 +105,7 @@ Only one inspector is open at a time.
 - **Wi-Fi:** AP markers with dashed association-range circles, users carried over Wi-Fi drawn in purple,
   links to their AP, Wi-Fi offload share and Wi-Fi user tiles, a cellular vs Wi-Fi traffic chart, and Wi-Fi
   join/leave events.
-- **Map layers:** signal level (RSRP or RxLev), best server, SINR, peak DL throughput, and modulation reached. Each can
+- **Map layers:** signal level (RSRP in the drive-test classes −145/−120/−110/−100/−90/−80/−70/−40 dBm, or RxLev), best server, SINR, peak DL throughput, and modulation reached. Each can
   be filtered by operator and RAT, with a hover readout. Further overlays show sectors, users
   (coloured by state), user-to-cell links and the road graph.
 - **KPI tiles:** coverage, handover success, ping-pong, drop rate, block rate, mean and cell-edge
@@ -128,7 +128,7 @@ The **Models** tab in the app has the full formulas. In short:
 | Area | Model |
 |---|---|
 | Path loss | Okumura-Hata (≤1500 MHz) / COST-231 Hata (>1500 MHz), with environment corrections and a free-space floor; or **COST-231 Walfisch–Ikegami on OSM buildings** |
-| Buildings | Footprints and heights (`height`, `building:levels`, type) rasterised at 3 m; 720 rays per site up to 4 km; exact LOS test, rooftop-to-street and multi-screen diffraction from actual roof heights and spacing; ITU-R P.2109 building entry loss for indoor UEs |
+| Buildings | Footprints and heights (`height`, `building:levels`, type) rasterised at 3 m; 720 rays per site up to 4 km; exact LOS test, rooftop-to-street and multi-screen diffraction from actual roof heights and spacing; ITU-R P.2109 building entry loss for indoor UEs, also on Hata paths (inside an OSM footprint = indoor) |
 | Antenna | 3GPP TR 36.814 parabolic horizontal and vertical pattern, with tilt and front-to-back limit |
 | Shadowing | Log-normal truncated at ±3σ, spatially correlated (lattice at the decorrelation distance, per site position: every band / RAT on one mast shares it) |
 | SINR | Wideband, spectrum-overlap weighted, load weighted; thermal noise is kTB + NF |
@@ -147,7 +147,8 @@ The **Models** tab in the app has the full formulas. In short:
 - Hata models are empirical. They are valid for 1–20 km and antennas 30–200 m high. Small cells,
   short distances and frequencies above 2 GHz (LTE 2600, NR 3500) are **extrapolated**, and the
   app flags this.
-- Hata models ignore buildings; only the statistical shadowing accounts for obstructions. The Walfisch–Ikegami
+- Hata models ignore building geometry (only the statistical shadowing accounts for obstructions); with OSM
+  footprints loaded they add the P.2109 entry loss for indoor points, but cannot tell LOS from NLOS. The Walfisch–Ikegami
   model uses OSM buildings but no terrain, no reflections, and a fixed street orientation (φ = 90°).
   OSM building heights are often missing, in which case levels, building type, or a default are used.
 - Only the downlink is modelled. UMTS is not modelled; UMTS rows are skipped on import.

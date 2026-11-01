@@ -129,6 +129,27 @@ describe('building model in the radio context', () => {
   });
 });
 
+describe('indoor loss with Hata', () => {
+  it('adds the P.2109 entry loss inside a footprint and nothing outside', () => {
+    const scn = defaultScenario();
+    scn.settings.radio.shadowingEnabled = false;
+    const proj = new LocalProjection(scn.center.lat, scn.center.lng);
+    const model = new BuildingModel();
+    model.setBuildings(setWithBox(proj, 200, 200, 260, 260, 20), 'test');
+    const plain = buildRadioContext(scn);
+    const ctx = buildRadioContext(scn, model.provider(scn), 0, model.indoorMask(scn));
+    expect(ctx.paths).toBeNull(); // still Hata
+    const c = ctx.cells.find((x) => x.x === 0 && x.y === 0 && x.tech === 'LTE')!;
+    expect(rxLevel(plain, c, 230, 230) - rxLevel(ctx, c, 230, 230)).toBeCloseTo(buildingEntryLossDb(c.freqMHz, 'traditional'), 3);
+    expect(rxLevel(ctx, c, 300, 300)).toBe(rxLevel(plain, c, 300, 300));
+    expect(pathCondition(ctx, c, 230, 230)).toBe(PathCond.Indoor);
+    expect(pathCondition(ctx, c, 300, 300)).toBe(PathCond.Outdoor);
+    scn.settings.radio.buildingEntry = 'none';
+    const off = buildRadioContext(scn, model.provider(scn), 0, model.indoorMask(scn));
+    expect(rxLevel(off, c, 230, 230)).toBe(rxLevel(plain, c, 230, 230));
+  });
+});
+
 describe('multipolygon buildings (outer outline + courtyard)', () => {
   const proj = new LocalProjection(49.8356, 24.0142);
   const ll = (x: number, y: number) => proj.toLatLng(x, y);

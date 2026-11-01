@@ -41,6 +41,7 @@ export interface HeatmapResult {
  * arrays and the cached ones are used.
  */
 let cachedPaths: RadioContext['paths'] = null;
+let cachedIndoor: RadioContext['indoor'] = null;
 
 self.onmessage = (e: MessageEvent<HeatmapRequest>) => {
   const t0 = performance.now();
@@ -49,6 +50,11 @@ self.onmessage = (e: MessageEvent<HeatmapRequest>) => {
     if (ctx.paths.loss.length) cachedPaths = ctx.paths;
     else if (cachedPaths && cachedPaths.version === ctx.paths.version) ctx.paths = cachedPaths;
     else ctx.paths = null;
+  }
+  if (ctx.indoor) {
+    if (ctx.indoor.mask.length) cachedIndoor = ctx.indoor;
+    else if (cachedIndoor && cachedIndoor.version === ctx.indoor.version) ctx.indoor = cachedIndoor;
+    else ctx.indoor = null;
   }
   const proj = new LocalProjection(ctx.lat0, ctx.lng0);
   const cols = lngs.length;

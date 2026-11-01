@@ -344,7 +344,10 @@ export class UserInspector {
     this.liveHost.append(
       h('div', { class: 'kv-grid' },
         kv('State', state),
-        c && c.pathMap >= 0 ? kv('Path', PATH_COND_LABEL[pathCondition(this.app.ctx(), c, u.x, u.y)] + ' (building model)') : '',
+        c && (c.pathMap >= 0 || ctx.indoor) ? (() => {
+          const pc = pathCondition(ctx, c, u.x, u.y);
+          return pc ? kv('Path', `${PATH_COND_LABEL[pc]}${pc === 3 ? ` (+${fmt(c.belDb, 1)} dB entry loss)` : ''}`) : '';
+        })() : '',
         kv('Mobility', u.mode === 'static' ? 'static' : `${u.mode === 'walk' ? 'pedestrian' : 'vehicle'}, ${u.arrived ? 'stopped at target' : `${Math.round(u.speed * 3.6)} km/h`}${u.dragging ? ' (dragging)' : ''}`),
         kv('Device', `${techsOf(u.techMask).join(' / ')} · ${engine.ueRx(u)} Rx antenna${engine.ueRx(u) > 1 ? 's' : ''}${u.ueRxOverride === null ? '' : ' (set)'}`),
         kv('Position', `${u.lat.toFixed(5)}, ${u.lng.toFixed(5)}`),
