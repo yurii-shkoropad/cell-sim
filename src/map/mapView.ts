@@ -504,6 +504,23 @@ export class MapView {
     if (ap) this.map.panTo([ap.lat, ap.lng]);
   }
 
+  /**
+   * Show a cell on the map: centre on its site (zooming in if far out), flash it, and
+   * emphasise its sector wedge for a few seconds.
+   */
+  locateCell(sectorId: string) {
+    const c = this.ctx?.cells.find((x) => x.sectorId === sectorId);
+    if (!c) return;
+    this.map.setView([c.lat, c.lng], Math.max(this.map.getZoom(), 16));
+    this.flashAt(c.lat, c.lng, c.color);
+    this.setSectorHighlight(sectorId);
+    clearTimeout(this.locateTimer);
+    this.locateTimer = window.setTimeout(() => {
+      if (this.highlightSectorId === sectorId) this.setSectorHighlight(null);
+    }, 4000);
+  }
+  private locateTimer = 0;
+
   focusStation(id: string) {
     const bs = this.store.station(id);
     if (bs) this.map.panTo([bs.lat, bs.lng]);

@@ -216,10 +216,25 @@ export function kpiPanel(app: App): HTMLElement {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (it) => `${(it.parsed.x ?? 0).toFixed(0)}% load` } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (it) => `${(it.parsed.x ?? 0).toFixed(0)}% load`, footer: () => 'Click to locate on the map' } } },
       scales: { x: { min: 0, max: 100, grid: { color: GRID }, ticks: { callback: (v) => `${v}%` } }, y: { grid: { display: false }, ticks: { autoSkip: false } } },
     },
   });
+  /** Sector ids of the bars, top to bottom. */
+  let loadSectors: string[] = [];
+  // A click on a bar or on its name shows that cell on the map. Native listeners: Chart.js
+  // only reports clicks inside the plot area, not on the axis labels.
+  const loadRow = (ev: MouseEvent) => {
+    const a = load.chartArea;
+    if (!a || ev.offsetY < a.top || ev.offsetY > a.bottom || ev.offsetX > a.right) return -1;
+    const k = Math.round(load.scales.y.getValueForPixel(ev.offsetY) ?? -1);
+    return k >= 0 && k < loadSectors.length ? k : -1;
+  };
+  cLoad.addEventListener('click', (ev) => {
+    const k = loadRow(ev);
+    if (k >= 0) app.mapView.locateCell(loadSectors[k]);
+  });
+  cLoad.addEventListener('mousemove', (ev) => (cLoad.style.cursor = loadRow(ev) >= 0 ? 'pointer' : ''));
 
   const cdf = new Chart<'line', { x: number; y: number }[]>(cCdf, {
     type: 'line',
@@ -514,6 +529,7 @@ export function kpiPanel(app: App): HTMLElement {
     const ranked = (scope.kind === 'network' ? v.cells.filter((i) => engine.cells[i]?.load > 0).sort((a, b) => engine.cells[b].load - engine.cells[a].load).slice(0, 12) : v.cells);
     loadTitle.textContent = scope.kind === 'network' ? 'Most loaded cells (PRB / TCH utilisation)' : 'Cell load (PRB / TCH utilisation)';
     load.data.labels = ranked.map((i) => `${ctx.cells[i]?.name ?? i} (${ctx.cells[i]?.tech ?? ''})`);
+    loadSectors = ranked.map((i) => ctx.cells[i]?.sectorId ?? '');
     load.data.datasets[0].data = ranked.map((i) => (engine.cells[i]?.load ?? 0) * 100);
     load.update('none');
 
