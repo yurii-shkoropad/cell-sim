@@ -320,10 +320,11 @@ export class MapView {
         w = 10 + rats.reduce((a, [, n]) => a + (n > 1 ? 30 : 18), 0);
       }
       const ih = plain ? 16 : 22;
+      const fs = this.store.layers.siteNameSize;
       const html = `<div class="bs-icon site ${plain ? 'plain' : ''} ${selected ? 'selected' : ''} ${off ? 'disabled' : ''}" style="--c:${color}">${badge}</div>`
-        + (showNames ? `<div class="site-name" style="top:${ih + 2}px">${escapeHtml(site.name)}</div>` : '');
+        + (showNames ? `<div class="site-name" style="top:${ih + 2}px;font-size:${fs}px">${escapeHtml(site.name)}</div>` : '');
       const icon = L.divIcon({ className: 'bs-divicon', html, iconSize: [w, ih], iconAnchor: [w / 2, ih / 2] });
-      this.markerBox.set(site.key, { w, h: showNames ? ih + 24 : ih });
+      this.markerBox.set(site.key, { w, h: showNames ? ih + 4 + Math.ceil(fs * 1.3) : ih });
       let m = this.markers.get(site.key);
       if (!m) {
         m = L.marker([site.lat, site.lng], { icon, draggable: true, autoPan: true, zIndexOffset: 1000 });
