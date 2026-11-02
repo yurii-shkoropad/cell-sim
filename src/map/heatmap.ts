@@ -8,7 +8,7 @@ import { PATH_COND_LABEL } from '../radio/buildingPaths';
 const COND_COLORS = ['#888888', '#1baf7a', '#eb6834', '#4a3aa7', '#9ec5e8'];
 import { isolateFromMap } from './mapView';
 import { colorAt, cssGradient, parseColor, rsrpScale, RXLEV_SCALE, SINR_SCALE, THR_SCALE, type Scale } from './colors';
-import type { HeatmapRequest, HeatmapResult } from './heatmap.worker';
+import type { HeatmapProgress, HeatmapRequest, HeatmapResult } from './heatmap.worker';
 
 /** Extra margin rendered outside the viewport so small pans don't show gaps. */
 const PAD = 0.15;
@@ -34,11 +34,18 @@ export class HeatmapLayer {
     private store: Store,
   ) {
     this.worker = new Worker(new URL('./heatmap.worker.ts', import.meta.url), { type: 'module' });
-    this.worker.onmessage = (e: MessageEvent<HeatmapResult>) => this.onResult(e.data);
+    this.worker.onmessage = (e: MessageEvent<HeatmapResult | HeatmapProgress>) => {
+      if ('progress' in e.data) this.showProgress(e.data);
+      else this.onResult(e.data);
+    };
+    // Small "updating" pill on the map while a job runs (only if it takes a moment).
+    this.busyEl = L.DomUtil.create('div', 'hm-busy', map.getContainer());
+    this.busyEl.style.display = 'none';
     this.worker.onerror = () => {
       // Never stay "busy" forever: a failed job must not block every later one.
       this.busy = false;
       this.onStatus(false, this.lastMs);
+      this.setBusyUi(null, null);
     };
 
     this.legendEl = L.DomUtil.create('div', 'legend');
@@ -142,6 +149,7 @@ export class HeatmapLayer {
     };
     this.busy = true;
     this.onStatus(true, this.lastMs);
+    this.setBusyUi(stage, null);
     this.worker.postMessage(req);
   }
 
@@ -165,7 +173,38 @@ export class HeatmapLayer {
     else {
       this.lastMs = r.ms;
       this.onStatus(false, r.ms);
+      this.setBusyUi(null, null);
     }
+  }
+
+  private busyEl: HTMLDivElement;
+  private busyTimer = 0;
+  private busyShown = false;
+
+  private showProgress(p: HeatmapProgress) {
+    if (p.gen === this.gen && this.busy) this.setBusyUi(this.pending?.stage ?? 'fine', p.progress);
+  }
+
+  /** stage null = done. Shown only after 250 ms, so quick updates never flash it. */
+  private setBusyUi(stage: 'coarse' | 'fine' | null, progress: number | null) {
+    if (stage === null) {
+      clearTimeout(this.busyTimer);
+      this.busyTimer = 0;
+      this.busyShown = false;
+      this.busyEl.style.display = 'none';
+      return;
+    }
+    const names: Record<string, string> = { rsrp: 'signal', server: 'best server', sinr: 'SINR', throughput: 'throughput', modulation: 'modulation', condition: 'propagation' };
+    const what = names[this.store.layers.heatmap] ?? 'coverage';
+    const pct = progress === null ? '' : ` · ${Math.round(progress * 100)}%`;
+    this.busyEl.innerHTML = `<span class="hm-spin"></span>${stage === 'coarse' ? `Updating ${what} map…` : `Refining ${what} map${pct}`}<i style="width:${progress === null ? 0 : Math.round(progress * 100)}%"></i>`;
+    if (this.busyShown) return;
+    if (!this.busyTimer) this.busyTimer = window.setTimeout(() => {
+      this.busyTimer = 0;
+      if (!this.busy) return;
+      this.busyShown = true;
+      this.busyEl.style.display = '';
+    }, 250);
   }
 
   scale(kind: HeatmapKind = this.store.layers.heatmap): Scale | null {

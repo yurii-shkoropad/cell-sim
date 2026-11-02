@@ -20,6 +20,12 @@ export interface HeatmapRequest {
   ueRx: Record<Tech, number>;
 }
 
+/** Sent while a job runs: share of rows done (0..1). */
+export interface HeatmapProgress {
+  progress: number;
+  gen: number;
+}
+
 export interface HeatmapResult {
   gen: number;
   cols: number;
@@ -72,7 +78,14 @@ self.onmessage = (e: MessageEvent<HeatmapRequest>) => {
   const xs = new Float64Array(cols);
   for (let i = 0; i < cols; i++) xs[i] = proj.toXY(ctx.lat0, lngs[i]).x;
 
+  let lastReport = t0;
   for (let r = 0; r < rows; r++) {
+    // Progress about 5× a second (only long jobs ever report).
+    const now = performance.now();
+    if (now - lastReport > 200) {
+      lastReport = now;
+      (self as unknown as Worker).postMessage({ progress: r / rows, gen: e.data.gen } satisfies HeatmapProgress);
+    }
     const y = proj.toXY(lats[r], ctx.lng0).y;
     for (let col = 0; col < cols; col++) {
       const x = xs[col];
