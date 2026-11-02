@@ -2,7 +2,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { destination } from '../geo';
 import { verticalFootprint } from '../radio/antenna';
-import type { RadioContext } from '../radio/cells';
+import type { CellRF, RadioContext } from '../radio/cells';
 import type { SimEngine, SimUser } from '../sim/engine';
 import type { Zone } from '../sim/population';
 import type { RoadGraph } from '../sim/roads';
@@ -100,6 +100,16 @@ export class MapView {
     const cell = this.ctx?.cells.find((c) => c.sectorId === bs.sectors[i]?.id)?.color;
     if (pal === 'cell' || open) return cell ?? '#bbb';
     return this.store.scenario.operators.find((o) => o.id === bs.operatorId)?.color ?? '#555';
+  }
+
+  /**
+   * Colour that stands for one cell everywhere outside its wedge (user links, inspector dots,
+   * KPI chips, flashes), matching the open station's wedges: by sector with the S1/S2/S3
+   * palette, else the cell's own colour (also on the best-server heatmap, which needs one per cell).
+   */
+  cellColor(c: CellRF): string {
+    if (this.store.layers.sectorPalette === 'rgb' && this.store.layers.heatmap !== 'server') return SECTOR_RGB[c.sectorIdx % SECTOR_RGB.length];
+    return c.color;
   }
 
   /** Sector emphasised on the map (hovered / edited row in the station editor). */
@@ -543,7 +553,7 @@ export class MapView {
     const c = this.ctx?.cells.find((x) => x.sectorId === sectorId);
     if (!c) return;
     this.map.setView([c.lat, c.lng], Math.max(this.map.getZoom(), 16));
-    this.flashAt(c.lat, c.lng, c.color);
+    this.flashAt(c.lat, c.lng, this.cellColor(c));
     this.setSectorHighlight(sectorId);
     clearTimeout(this.locateTimer);
     this.locateTimer = window.setTimeout(() => {
@@ -622,7 +632,7 @@ export class MapView {
       const isSel = u.id === selUser;
       const ofSelected = c.bsId === selBs;
       const showPcell = ofSelected || isSel || (lay.showLinks && u.session && !wifiCarried);
-      if (showPcell) line([[u.lat, u.lng], [c.lat, c.lng]], { color: c.color, weight: ofSelected || isSel ? 2 : 1, opacity: ofSelected || isSel ? 0.9 : 0.7, dashArray: (ofSelected || isSel) && (!u.session || wifiCarried) ? '3 4' : undefined });
+      if (showPcell) line([[u.lat, u.lng], [c.lat, c.lng]], { color: this.cellColor(c), weight: ofSelected || isSel ? 2 : 1, opacity: ofSelected || isSel ? 0.9 : 0.7, dashArray: (ofSelected || isSel) && (!u.session || wifiCarried) ? '3 4' : undefined });
       // Carrier aggregation: one dashed line per SCell in its cell's colour, shifted sideways
       // (co-sited SCells would otherwise lie exactly on the PCell line).
       u.scells.forEach((i, k) => {
@@ -630,7 +640,7 @@ export class MapView {
         if (!sc || !(isSel || sc.bsId === selBs || ofSelected || lay.showLinks)) return;
         const strong = isSel || sc.bsId === selBs || ofSelected;
         const px = (k % 2 ? -1 : 1) * 4 * (Math.floor(k / 2) + 1);
-        line(this.offsetLine([u.lat, u.lng], [sc.lat, sc.lng], px), { color: sc.color, weight: strong ? 2 : 1, opacity: strong ? 0.9 : 0.7, dashArray: '6 4' });
+        line(this.offsetLine([u.lat, u.lng], [sc.lat, sc.lng], px), { color: this.cellColor(sc), weight: strong ? 2 : 1, opacity: strong ? 0.9 : 0.7, dashArray: '6 4' });
       });
     }
     while (this.linkLines.length > k) this.linkLines.pop()!.remove();

@@ -363,7 +363,7 @@ export function kpiPanel(app: App): HTMLElement {
       bs.sectors.forEach((s, i) => {
         const c = ctx.cells.find((x) => x.sectorId === s.id);
         if (!c) return;
-        scopeBar.appendChild(chip(`S${i + 1}`, scope.kind === 'cell' && scope.sectorId === s.id, c.color, () => (scope = { kind: 'cell', bsId: bs.id, sectorId: s.id }), `${c.name} · ${c.tech} · PCI ${c.pci}`));
+        scopeBar.appendChild(chip(`S${i + 1}`, scope.kind === 'cell' && scope.sectorId === s.id, app.mapView.cellColor(c), () => (scope = { kind: 'cell', bsId: bs.id, sectorId: s.id }), `${c.name} · ${c.tech} · PCI ${c.pci}`));
       });
     } else scopeBar.appendChild(h('span', { class: 'hint' }, 'Select a station on the map for its KPIs'));
   };

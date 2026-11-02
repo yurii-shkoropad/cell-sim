@@ -260,7 +260,7 @@ export class StationInspector {
       this.body.append(
         h('div', { class: 'si-card' },
           h('div', { class: 'si-card-head' },
-            h('span', { class: 'dot', style: `background:${x.c.color}` }),
+            h('span', { class: 'dot', style: `background:${this.app.mapView.cellColor(x.c)}` }),
             h('b', null, x.label),
             h('span', { class: 'muted' }, `az ${sec.azimuth}° · ${x.c.tech === 'GSM' ? 'BSIC' : 'PCI'} ${sec.pci} · ${sec.freqMHz} MHz`),
           ),

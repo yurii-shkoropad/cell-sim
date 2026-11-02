@@ -26,6 +26,8 @@ export interface CellRF {
   idx: number;
   bsId: string;
   sectorId: string;
+  /** Index of the sector on its station (S1 = 0). */
+  sectorIdx: number;
   name: string;
   siteSeed: number;
   x: number;
@@ -171,6 +173,7 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
         idx: cells.length,
         bsId: bs.id,
         sectorId: s.id,
+        sectorIdx: si,
         name: `${bs.name}-${si + 1}`,
         siteSeed,
         x,

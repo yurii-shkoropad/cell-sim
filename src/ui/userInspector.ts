@@ -278,7 +278,7 @@ export class UserInspector {
         ...rows.map((r) => {
           const c = ctx.cells[r.cell];
           return h('tr', { class: r.used ? 'serving' : '' },
-            h('td', null, h('span', { class: 'dot', style: `background:${c.color}` }), ' ', this.locateLink(c)),
+            h('td', null, h('span', { class: 'dot', style: `background:${this.app.mapView.cellColor(c)}` }), ' ', this.locateLink(c)),
             h('td', { class: 'nowrap' }, this.bandSector(c)),
             h('td', null, String(c.freqMHz)),
             h('td', null, fmt(r.lvl, 0)),
@@ -404,7 +404,7 @@ export class UserInspector {
           const cell = ctx.cells[m.cell];
           const cls = m.cell === u.serving ? 'serving' : m.cell === u.hoCand ? 'cand' : '';
           return h('tr', { class: cls },
-            h('td', null, h('span', { class: 'dot', style: `background:${cell.color}` }), ' ', this.locateLink(cell)),
+            h('td', null, h('span', { class: 'dot', style: `background:${this.app.mapView.cellColor(cell)}` }), ' ', this.locateLink(cell)),
             h('td', null, cell.tech),
             h('td', { class: 'nowrap' }, this.bandSector(cell)),
             h('td', null, `${fmt(m.level)} dBm`),
