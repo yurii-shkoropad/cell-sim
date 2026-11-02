@@ -384,3 +384,11 @@ table.cmp tr.live td:first-child { font-weight: 600; }
 .cal-row { border-top: 1px solid var(--border, #e3e3e3); padding-top: 4px; margin-top: 4px; }
 .cal-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
 .cal-name .muted { font-weight: 400; color: var(--muted); }
+
+.bulk { margin: 6px 0; padding: 4px 6px; border: 1px solid var(--border, #e3e3e3); border-radius: 6px; }
+.bulk summary { cursor: pointer; font-weight: 600; font-size: 12px; }
+.bulk-row { display: grid; grid-template-columns: 1fr auto; grid-template-areas: 'f b' 'n n'; align-items: center; column-gap: 6px; margin: 4px 0; }
+.bulk-row .field { grid-area: f; grid-template-columns: 1fr 120px; margin: 0; }
+.bulk-row .field input { width: 64px; }
+.bulk-row .btn { grid-area: b; padding: 3px 8px; }
+.bulk-now { grid-area: n; font-size: 11px; color: var(--muted); text-align: right; margin-top: -2px; }

@@ -4,6 +4,7 @@ import { makeStation, newId, PRESETS, presetByKey } from '../../radio/presets';
 import { carrierLabel, sitesOf, siteRats } from '../../state/sites';
 import type { BaseStation } from '../../types';
 import type { App } from '../app';
+import { bulkEditor, type BulkState } from '../bulkEdit';
 import { button, clear, colorField, h, numField, section, selectField, textField, toast } from '../dom';
 
 export function networkPanel(app: App): HTMLElement {
@@ -144,6 +145,7 @@ export function networkPanel(app: App): HTMLElement {
 
   // ---------------------------------------------------------------- station list
   let filter = '';
+  const bulk: BulkState = { mode: 'set', open: false, values: {} };
   const renderList = () => {
     clear(listHost);
     const ops = new Map(store.scenario.operators.map((o) => [o.id, o]));
@@ -151,7 +153,8 @@ export function networkPanel(app: App): HTMLElement {
     const match = (st: BaseStation) => !q || st.name.toLowerCase().includes(q) || st.band.toLowerCase().includes(q) || st.tech.toLowerCase().includes(q) || (ops.get(st.operatorId)?.name.toLowerCase().includes(q) ?? false);
     // One row per site (co-located stations of an operator); its carriers unfold under the open site.
     const sites = sitesOf(store.scenario.stations).filter((site) => (q && site.name.toLowerCase().includes(q)) || site.stations.some(match));
-    const items = sites.flatMap((site) => site.stations);
+    // The stations the filter names: all of a site matched by name, else only its matching carriers ("B20" → the B20 carriers).
+    const items = sites.flatMap((site) => (q && site.name.toLowerCase().includes(q) ? site.stations : site.stations.filter(match)));
     const search = h('input', { type: 'search', placeholder: 'Filter by name, tech, band, operator', value: filter, oninput: () => {
       filter = search.value;
       renderList();
@@ -168,6 +171,7 @@ export function networkPanel(app: App): HTMLElement {
       section(
         `Sites (${sitesOf(store.scenario.stations).length}) · ${store.scenario.stations.length} stations`,
         search,
+        items.length ? bulkEditor(app, () => items, bulk, renderList) : null,
         h('div', { class: 'st-list' },
           ...sites.flatMap((site) => {
             const isOpen = site.stations.some((b) => b.id === store.selectedStationId);
