@@ -3,6 +3,7 @@ import { BUILDING_LEGEND } from '../../map/mapView';
 import { RSRP_PALETTES } from '../../map/colors';
 import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES } from '../../state/store';
 import { TECHS, type CaSettings, type Tech, type TechThresholds } from '../../types';
+import { ENV_RADIUS_M } from '../../radio/buildings';
 import type { App } from '../app';
 import { button, checkField, clear, h, numField, section, selectField } from '../dom';
 
@@ -16,10 +17,12 @@ export function radioPanel(app: App): HTMLElement {
     const set = () => store.emit('settings');
     root.append(
       section('Propagation',
-        selectField('Environment', [['urban-large', 'Urban – large/metropolitan city'], ['urban-medium', 'Urban – medium/small city'], ['suburban', 'Suburban'], ['rural', 'Rural / open area']], () => r.environment, (v) => {
+        selectField('Environment', [['auto', 'Auto – from OSM buildings around each site'], ['urban-large', 'Urban – large/metropolitan city'], ['urban-medium', 'Urban – medium/small city'], ['suburban', 'Suburban'], ['rural', 'Rural / open area']], () => r.environment, (v) => {
           r.environment = v;
           set();
-        }),
+          setTimeout(render, 150); // the per-site summary needs the rebuilt radio context
+        }, 'Sets the Hata correction terms (and the metropolitan term of Walfisch–Ikegami)'),
+        r.environment === 'auto' ? envSummary(app) : '',
         selectField('Path-loss model', [['auto', 'Auto (Hata ≤1500 MHz, COST-231 above)'], ['okumura-hata', 'Okumura-Hata'], ['cost231-hata', 'COST-231 Hata'], ['cost231-wi', 'COST-231 Walfisch–Ikegami + OSM buildings']], () => r.model, (v) => {
           r.model = v;
           set();
@@ -152,6 +155,27 @@ function thresholdTable(th: Record<Tech, TechThresholds>, changed: () => void): 
       }),
     ]),
   );
+}
+
+/** Environment = Auto: how many sites fell in each class, and the rule. */
+function envSummary(app: App): HTMLElement {
+  const el = h('p', { class: 'hint' });
+  const upd = () => {
+    const per = new Map<string, { env: string; est: boolean }>();
+    for (const c of app.ctx().cells) per.set(`${c.x.toFixed(0)}|${c.y.toFixed(0)}`, { env: c.environment, est: !!c.envEstimate });
+    const n = new Map<string, number>();
+    let noData = 0;
+    for (const v of per.values()) {
+      n.set(v.env, (n.get(v.env) ?? 0) + 1);
+      if (!v.est) noData++;
+    }
+    const label: Record<string, string> = { 'urban-large': 'large city', 'urban-medium': 'medium city', suburban: 'suburban', rural: 'rural' };
+    const parts = ['urban-large', 'urban-medium', 'suburban', 'rural'].filter((k) => n.get(k)).map((k) => `${n.get(k)} ${label[k]}`);
+    el.textContent = `${per.size} sites: ${parts.join(', ') || '—'}${noData ? ` (${noData} without building data → medium city)` : ''}. From the buildings within ${ENV_RADIUS_M} m: ≥ 30 % built-up and ≥ 20 m high = large city, ≥ 18 % = medium city, ≥ 6 % = suburban, else rural. Each station shows its own in Configure.`;
+  };
+  upd();
+  app.onLiveTick(upd);
+  return el;
 }
 
 /** Carrier aggregation: SCells on other carriers of the same site for LTE/NR data sessions. */

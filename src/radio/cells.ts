@@ -1,6 +1,7 @@
 import { LocalProjection } from '../geo';
 import { buildWifiRF, type WifiRF } from './wifi';
-import type { BaseStation, RadioSettings, Scenario, Tech } from '../types';
+import type { BaseStation, Environment, RadioSettings, Scenario, Tech } from '../types';
+import type { EnvironmentEstimate } from './buildings';
 import { antennaAttenuation } from './antenna';
 import { antennaType, bestRank, validAntennaFor, type RankChoice } from './mimo';
 import { modulation, modulationForSe, validModulationFor, type Modulation, type ModulationKey } from './modulation';
@@ -10,6 +11,9 @@ import { schedulerInfo, type SchedulerKey } from '../sim/scheduler';
 import { gsmTrafficChannels, occupiedBandwidthMHz, powerUnits, rbBandwidthHz, resourceBlocks } from './presets';
 import { seedFromString, shadowingDb } from './shadowing';
 import { buildingEntryLossDb } from './walfisch';
+
+/** Environment = Auto where there is no building data. */
+export const AUTO_FALLBACK_ENV: Environment = 'urban-medium';
 
 /**
  * Flattened, serialisable description of one cell (= one sector of a station),
@@ -48,6 +52,9 @@ export interface CellRF {
   fsConst: number;
   /** Building entry loss at this cell's frequency (ITU-R P.2109), added to Hata for indoor points, dB. */
   belDb: number;
+  /** Environment class used for this cell's path loss, and the building statistics it came from (Auto). */
+  environment: Environment;
+  envEstimate: EnvironmentEstimate | null;
   noiseDbm: number;
   pci: number;
   rbs: number;
@@ -121,7 +128,11 @@ export function cellColor(idx: number): string {
   return `hsl(${h.toFixed(0)}, 70%, 50%)`;
 }
 
-export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVersion = 0, indoor: IndoorMask | null = null): RadioContext {
+/**
+ * `envAt`: classifies a site's surroundings from the buildings (Environment = Auto); without it,
+ * or outside the building data, Auto falls back to a medium-size city.
+ */
+export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVersion = 0, indoor: IndoorMask | null = null, envAt?: (x: number, y: number) => EnvironmentEstimate | null): RadioContext {
   const r = scn.settings.radio;
   const proj = new LocalProjection(scn.center.lat, scn.center.lng);
   const opIndex = new Map(scn.operators.map((o, i) => [o.id, i]));
@@ -136,6 +147,8 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
     // position (other bands / RATs / operators on one mast) shares it, as it is ~fully
     // correlated across carriers of a site.
     const siteSeed = seedFromString(`${bs.lat.toFixed(5)},${bs.lng.toFixed(5)}`);
+    const envEstimate = r.environment === 'auto' ? (envAt?.(x, y) ?? null) : null;
+    const environment: Environment = r.environment === 'auto' ? (envEstimate?.env ?? AUTO_FALLBACK_ENV) : r.environment;
     const sp = paths && r.model === 'cost231-wi' ? paths(bs, x, y) : null;
     const pathMap = sp ? pathLoss.push(sp.loss) - 1 : -1;
     if (sp) pathCond.push(sp.cond);
@@ -144,7 +157,7 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
       const bw = bs.tech === 'GSM' ? 0.2 : bs.bandwidthMHz;
       const occ = occupiedBandwidthMHz(bs.tech, bw, s.freqMHz);
       const units = powerUnits(bs.tech, bw, s.freqMHz);
-      const pl = pathLossCoeffs(s.freqMHz, bs.heightM, r.ueHeightM, r.environment, r.model);
+      const pl = pathLossCoeffs(s.freqMHz, bs.heightM, r.ueHeightM, environment, r.model);
       cells.push({
         idx: cells.length,
         bsId: bs.id,
@@ -174,6 +187,8 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
         plB: pl.B,
         fsConst: 32.45 + 20 * Math.log10(s.freqMHz),
         belDb: buildingEntryLossDb(s.freqMHz, r.buildingEntry),
+        environment,
+        envEstimate,
         noiseDbm: -174 + 10 * Math.log10(occ * 1e6) + r.ueNoiseFigureDb,
         pci: s.pci,
         rbs: resourceBlocks(bs.tech, bw, s.freqMHz),

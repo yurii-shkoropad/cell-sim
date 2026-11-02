@@ -67,6 +67,14 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
     const ch = s0 ? channelNumber(bs.tech, s0.freqMHz) : null;
     if (ch) lines.push(`${ch.label} ${ch.value} (sector 1)`);
     derived.appendChild(h('div', null, ...lines.map((l) => h('div', null, l))));
+    // Environment used for this station's path loss (and why, when it is classified automatically).
+    const cell = app.ctx().cells.find((c) => c.bsId === bs.id);
+    if (cell) {
+      const ENV_LABEL: Record<string, string> = { 'urban-large': 'urban, large city', 'urban-medium': 'urban, medium city', suburban: 'suburban', rural: 'rural' };
+      const e = cell.envEstimate;
+      const auto = store.scenario.settings.radio.environment === 'auto';
+      derived.appendChild(h('div', null, `Environment: ${ENV_LABEL[cell.environment]}${auto ? (e ? ` (auto: ${Math.round(e.builtShare * 100)}% built-up, buildings ${fmt(e.meanHeightM, 0)} m on average within 500 m)` : ' (auto: no building data here, default)') : ''}`));
+    }
     for (const v of validity(s0?.freqMHz ?? 0, bs.heightM, store.scenario.settings.radio.ueHeightM, store.scenario.settings.radio.model)) derived.appendChild(h('div', { class: 'warn' }, '⚠ ' + v.message));
   };
   renderDerived();

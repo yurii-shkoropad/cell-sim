@@ -187,7 +187,7 @@ heatmap.loadsProvider = () => engine.loads.slice();
 heatmap.onStatus = (busy, ms) => (hmStatus.textContent = busy ? 'computing heatmap…' : `heatmap ${ms.toFixed(0)} ms`);
 
 function rebuild() {
-  ctx = buildRadioContext(store.scenario, buildings.provider(store.scenario), 0, buildings.indoorMask(store.scenario));
+  ctx = buildRadioContext(store.scenario, buildings.provider(store.scenario), 0, buildings.indoorMask(store.scenario), buildings.environmentAt(store.scenario));
   buildings.finish(ctx);
   if (buildings.lastComputed) bldStatus.textContent = `buildings: ${buildings.set!.count} · traced ${buildings.lastComputed} site${buildings.lastComputed > 1 ? 's' : ''} in ${buildings.lastComputeMs.toFixed(0)} ms`;
   engine.setScenario(store.scenario, ctx);

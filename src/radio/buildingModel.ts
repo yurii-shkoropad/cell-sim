@@ -1,7 +1,7 @@
 import { LocalProjection } from '../geo';
 import type { BaseStation, Scenario } from '../types';
 import { castStationPaths, type StationPaths } from './buildingPaths';
-import { rasterize, type BuildingRaster, type BuildingSet } from './buildings';
+import { classifyEnvironment, rasterize, type BuildingRaster, type BuildingSet, type EnvironmentEstimate } from './buildings';
 import type { IndoorMask, PathProvider, RadioContext } from './cells';
 
 /**
@@ -44,6 +44,21 @@ export class BuildingModel {
     return this.raster;
   }
 
+  /**
+   * Environment of a site from the buildings around it (Environment = Auto), cached per position;
+   * null without building data or outside it (the caller falls back to a medium city).
+   */
+  environmentAt(scn: Scenario): ((x: number, y: number) => EnvironmentEstimate | null) | undefined {
+    if (!this.set) return undefined;
+    const raster = this.ensureRaster(scn);
+    return (x, y) => {
+      const k = `${x.toFixed(0)}|${y.toFixed(0)}|${raster.version}`;
+      if (!this.envCache.has(k)) this.envCache.set(k, classifyEnvironment(raster, x, y));
+      return this.envCache.get(k)!;
+    };
+  }
+  private envCache = new Map<string, EnvironmentEstimate | null>();
+
   /** Building footprints for indoor loss on Hata paths (any model), or null without buildings. */
   indoorMask(scn: Scenario): IndoorMask | null {
     if (!this.set) return null;
@@ -61,17 +76,20 @@ export class BuildingModel {
     const r = scn.settings.radio;
     if (!this.set || r.model !== 'cost231-wi') return undefined;
     const raster = this.ensureRaster(scn);
+    const envAt = this.environmentAt(scn)!;
     this.usedKeys = [];
     this.lastComputeMs = 0;
     this.lastComputed = 0;
     return (bs: BaseStation, x: number, y: number) => {
       const f = (bs.sectors.find((s) => s.enabled) ?? bs.sectors[0])?.freqMHz ?? 1800;
-      const key = `${bs.id}|${x.toFixed(1)}|${y.toFixed(1)}|${bs.heightM}|${f}|${r.ueHeightM}|${r.buildingEntry}|${r.environment}|${raster.version}`;
+      // Metropolitan correction of Walfisch–Ikegami: the global choice, or this site's own class.
+      const metropolitan = (r.environment === 'auto' ? envAt(x, y)?.env : r.environment) === 'urban-large';
+      const key = `${bs.id}|${x.toFixed(1)}|${y.toFixed(1)}|${bs.heightM}|${f}|${r.ueHeightM}|${r.buildingEntry}|${metropolitan}|${raster.version}`;
       this.usedKeys.push(key);
       let p = this.cache.get(key);
       if (!p) {
         const t0 = performance.now();
-        p = castStationPaths(raster, x, y, { hb: bs.heightM, hm: r.ueHeightM, freqMHz: f, entry: r.buildingEntry, metropolitan: r.environment === 'urban-large' });
+        p = castStationPaths(raster, x, y, { hb: bs.heightM, hm: r.ueHeightM, freqMHz: f, entry: r.buildingEntry, metropolitan });
         this.lastComputeMs += performance.now() - t0;
         this.lastComputed++;
         this.cache.set(key, p);

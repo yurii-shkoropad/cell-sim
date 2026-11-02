@@ -98,7 +98,7 @@ and can be ticked off to compare coverage before and after it is built. Planned 
 **Reset** restarts the simulation with the same users. Global settings cover the speed ranges,
 default antennas, and the Poisson traffic rates for users with random traffic.
 
-**Radio:** environment (urban large/medium, suburban, rural), path-loss model, UE height, noise
+**Radio:** environment (urban large/medium, suburban, rural, or **Auto**: each site classified from the OSM buildings within 500 m by built-up share and mean height), path-loss model, UE height, noise
 figure, shadowing σ and decorrelation distance, interferer-load model, Shannon parameters, and
 per-RAT mobility thresholds (min level, A3 offset, hysteresis, TTT, B2, Qout, T310, priority).
 

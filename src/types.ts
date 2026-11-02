@@ -2,6 +2,8 @@ export type Tech = 'GSM' | 'LTE' | 'NR';
 export const TECHS: Tech[] = ['GSM', 'LTE', 'NR'];
 
 export type Environment = 'urban-large' | 'urban-medium' | 'suburban' | 'rural';
+/** 'auto': each site's environment is classified from the OSM buildings around it. */
+export type EnvironmentSetting = Environment | 'auto';
 /** 'cost231-wi': Walfisch–Ikegami on OSM building geometry (Hata where there is no building data). */
 export type PathLossModel = 'auto' | 'okumura-hata' | 'cost231-hata' | 'cost231-wi';
 
@@ -159,7 +161,7 @@ export interface UserSettings {
 }
 
 export interface RadioSettings {
-  environment: Environment;
+  environment: EnvironmentSetting;
   model: PathLossModel;
   ueHeightM: number;
   ueNoiseFigureDb: number;

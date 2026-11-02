@@ -1,4 +1,4 @@
-import type { PlannedBuilding } from '../types';
+import type { Environment, PlannedBuilding } from '../types';
 import type { LocalProjection } from '../geo';
 
 /**
@@ -282,4 +282,54 @@ export function rasterize(set: BuildingSet, proj: LocalProjection, defaultHeight
     }
   }
   return { x0: sw.x, y0: sw.y, res, nx, ny, id, h, version: ++rasterVersion };
+}
+
+/** Built-up share and mean building height around a point, and the environment class they give. */
+export interface EnvironmentEstimate {
+  env: Environment;
+  /** Share of the ground covered by buildings within the radius, 0..1. */
+  builtShare: number;
+  /** Area-weighted mean height of those buildings, m. */
+  meanHeightM: number;
+}
+
+/** Radius around a site used to classify its environment, m. */
+export const ENV_RADIUS_M = 500;
+
+/**
+ * Classify the surroundings of local point (x, y) from the building raster: built-up share
+ * and mean height within ENV_RADIUS_M (sampled every 2 raster cells). Heuristic thresholds:
+ * ≥ 30 % built and ≥ 20 m high = large city, ≥ 18 % = medium city, ≥ 6 % = suburban, else rural.
+ * Null when the disc lies outside the building data.
+ */
+export function classifyEnvironment(raster: BuildingRaster, x: number, y: number, radiusM = ENV_RADIUS_M): EnvironmentEstimate | null {
+  const { x0, y0, res, nx, ny, id, h } = raster;
+  const c0 = (x - x0) / res;
+  const r0 = (y - y0) / res;
+  const rr = radiusM / res;
+  if (c0 + rr < 0 || r0 + rr < 0 || c0 - rr >= nx || r0 - rr >= ny) return null;
+  let n = 0;
+  let built = 0;
+  let hSum = 0;
+  const step = 2;
+  for (let dr = -rr; dr <= rr; dr += step) {
+    const row = Math.round(r0 + dr);
+    if (row < 0 || row >= ny) continue;
+    const half = Math.sqrt(rr * rr - dr * dr);
+    for (let dc = -half; dc <= half; dc += step) {
+      const col = Math.round(c0 + dc);
+      if (col < 0 || col >= nx) continue;
+      n++;
+      const k = row * nx + col;
+      if (id[k] !== 0) {
+        built++;
+        hSum += h[k];
+      }
+    }
+  }
+  if (n < 50) return null;
+  const builtShare = built / n;
+  const meanHeightM = built ? hSum / built : 0;
+  const env: Environment = builtShare >= 0.3 && meanHeightM >= 20 ? 'urban-large' : builtShare >= 0.18 ? 'urban-medium' : builtShare >= 0.06 ? 'suburban' : 'rural';
+  return { env, builtShare, meanHeightM };
 }

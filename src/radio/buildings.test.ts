@@ -3,7 +3,7 @@ import { LocalProjection } from '../geo';
 import { defaultScenario } from '../state/defaults';
 import { castStationPaths, PATH_GRID, PathCond, pathSampleIndex } from './buildingPaths';
 import { BuildingModel } from './buildingModel';
-import { buildingsFromBundle, buildingsFromOverpass, heightFromTags, rasterize, stitchRings, withPlanned, type BuildingSet } from './buildings';
+import { buildingsFromBundle, buildingsFromOverpass, classifyEnvironment, heightFromTags, rasterize, stitchRings, withPlanned, type BuildingSet } from './buildings';
 import { buildRadioContext, pathCondition, rxLevel } from './cells';
 import { buildingEntryLossDb, fsplDb, multiScreen, walfischIkegami } from './walfisch';
 
@@ -126,6 +126,34 @@ describe('building model in the radio context', () => {
     expect(pathCondition(ctx, c, 0, 300)).toBe(PathCond.Nlos);
     expect(pathCondition(ctx, c, 0, -300)).toBe(PathCond.Los);
     expect(rxLevel(ctx, c, 0, 300)).toBeLessThan(rxLevel(hata, c, 0, 300));
+  });
+});
+
+describe('environment from buildings', () => {
+  it('classifies by built-up share and height, and Auto changes the Hata terms per site', () => {
+    const scn = defaultScenario();
+    const proj = new LocalProjection(scn.center.lat, scn.center.lng);
+    // A 600 × 600 m block of 25 m buildings around the centre: ~100 % of a 500 m disc is "built".
+    const dense = rasterize(setWithBox(proj, -300, -300, 300, 300, 25), proj, 12);
+    expect(classifyEnvironment(dense, 0, 0)!.env).toBe('urban-large');
+    const low = rasterize(setWithBox(proj, -300, -300, 300, 300, 8), proj, 12);
+    expect(classifyEnvironment(low, 0, 0)!.env).toBe('urban-medium');
+    // A 150 × 150 m block: 22 500 m² of a 785 000 m² disc ≈ 3 % → rural; 250 × 250 m ≈ 8 % → suburban.
+    expect(classifyEnvironment(rasterize(setWithBox(proj, -75, -75, 75, 75, 10), proj, 12), 0, 0)!.env).toBe('rural');
+    expect(classifyEnvironment(rasterize(setWithBox(proj, -125, -125, 125, 125, 10), proj, 12), 0, 0)!.env).toBe('suburban');
+    expect(classifyEnvironment(dense, 9000, 9000)).toBeNull(); // outside the data
+
+    const model = new BuildingModel();
+    model.setBuildings(setWithBox(proj, -125, -125, 125, 125, 10), 'test');
+    const fixed = buildRadioContext(scn);
+    scn.settings.radio.environment = 'auto';
+    const auto = buildRadioContext(scn, undefined, 0, null, model.environmentAt(scn));
+    const c = auto.cells.find((x) => x.x === 0 && x.y === 0)!;
+    expect(c.environment).toBe('suburban');
+    expect(c.envEstimate!.builtShare).toBeGreaterThan(0.06);
+    expect(c.plA).toBeLessThan(fixed.cells[c.idx].plA); // suburban correction lowers the loss
+    const far = auto.cells.find((x) => Math.hypot(x.x, x.y) > 2000);
+    if (far) expect(far.environment).toBe('urban-medium'); // no building data there: fallback
   });
 });
 
