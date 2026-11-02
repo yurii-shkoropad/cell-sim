@@ -277,7 +277,7 @@ export class UserInspector {
         ...rows.map((r) => {
           const c = ctx.cells[r.cell];
           return h('tr', { class: r.used ? 'serving' : '' },
-            h('td', null, h('span', { class: 'dot', style: `background:${c.color}` }), ' ', c.name),
+            h('td', null, h('span', { class: 'dot', style: `background:${c.color}` }), ' ', this.locateLink(c)),
             h('td', null, String(c.freqMHz)),
             h('td', null, fmt(r.lvl, 0)),
             h('td', null, fmt(r.sinr, 1)),
@@ -402,7 +402,7 @@ export class UserInspector {
           const cell = ctx.cells[m.cell];
           const cls = m.cell === u.serving ? 'serving' : m.cell === u.hoCand ? 'cand' : '';
           return h('tr', { class: cls },
-            h('td', null, h('span', { class: 'dot', style: `background:${cell.color}` }), ' ', cell.name),
+            h('td', null, h('span', { class: 'dot', style: `background:${cell.color}` }), ' ', this.locateLink(cell)),
             h('td', null, cell.tech),
             h('td', null, `${fmt(m.level)} dBm`),
             h('td', null, c && m.cell !== u.serving && cell.tech === c.tech ? `${m.level - servLvl >= 0 ? '+' : ''}${fmt(m.level - servLvl)} dB` : m.cell === u.serving ? 'serving' : ''),
@@ -418,5 +418,13 @@ export class UserInspector {
         })(),
       ),
     );
+  }
+
+  /** Cell name that shows the cell on the map (mousedown: the panel re-renders every tick, which would swallow a click). */
+  private locateLink(c: CellRF): HTMLElement {
+    return h('a', { href: '#', class: 'cell-link', title: 'Show this cell on the map', onclick: (e: Event) => e.preventDefault(), onmousedown: (e: Event) => {
+      e.preventDefault();
+      this.app.mapView.locateCell(c.sectorId);
+    } }, c.name);
   }
 }
