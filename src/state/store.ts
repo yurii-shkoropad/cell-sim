@@ -25,6 +25,8 @@ export interface LayerState {
   siteNameSize: number;
   /** What the label next to each user shows (from zoom 15); nothing ticked = no labels. */
   userLabel: UserLabelFields;
+  /** Readout of level / SINR / cell under the mouse on the heatmap. */
+  showReadout: boolean;
   /** User marker size: scale of the dots (1 = normal). */
   userSize: number;
   /** What a site marker shows: its bands, or RATs with carrier counts. */
@@ -66,9 +68,9 @@ type Listener = () => void;
 const STORAGE_KEY = 'radio-sim.scenario.v1';
 const VIEW_PREFS_KEY = 'radio-sim.rsrp-look';
 
-type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel' | 'userSize'>;
+type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel' | 'userSize' | 'showReadout'>;
 
-const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: { level: false, sinr: false, mod: false, peak: false }, userSize: 1 });
+const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: { level: false, sinr: false, mod: false, peak: false }, userSize: 1, showReadout: true });
 
 const defaultLayers = (): Omit<LayerState, keyof ViewPrefs> => ({
   heatmap: 'rsrp',
@@ -95,6 +97,7 @@ function loadViewPrefs(): ViewPrefs {
       siteBadge: v.siteBadge === 'rat' || v.siteBadge === 'none' ? v.siteBadge : d.siteBadge,
       showPci: v.showPci === true,
       showSiteNames: v.showSiteNames !== false,
+      showReadout: v.showReadout !== false,
       userSize: USER_SIZES.some(([k]) => +k === v.userSize) ? v.userSize! : d.userSize,
       userLabel: (() => {
         const x = v.userLabel as unknown;
@@ -113,7 +116,7 @@ function loadViewPrefs(): ViewPrefs {
 /** Remember the colour choices (heatmap and sectors) in this browser. */
 export function saveViewPrefs(l: LayerState) {
   try {
-    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames, siteNameSize: l.siteNameSize, userLabel: { ...l.userLabel }, userSize: l.userSize };
+    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames, siteNameSize: l.siteNameSize, userLabel: { ...l.userLabel }, userSize: l.userSize, showReadout: l.showReadout };
     localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
   } catch {
     /* storage unavailable: the choice lasts for this session */

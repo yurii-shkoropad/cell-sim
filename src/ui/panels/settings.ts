@@ -313,6 +313,10 @@ export function layersPanel(app: App): HTMLElement {
           l.resolutionPx = +v;
           changed(true);
         }),
+        checkField('Show values on mouse hover', () => l.showReadout, (v) => {
+          l.showReadout = v;
+          saveViewPrefs(l);
+        }, 'The box with level, SINR, serving cell and peak rate under the mouse'),
         h('p', { class: 'hint' }, 'Signal level is the best cell of the selected operator/RAT. SINR counts interference from every cell on overlapping spectrum (all operators). Hover over the map to read values.'),
       ),
       section('Overlays',

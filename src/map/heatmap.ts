@@ -410,7 +410,7 @@ export class HeatmapLayer {
   private showReadout(e: L.LeafletMouseEvent) {
     const r = this.result;
     const grid = this.resultGrid;
-    if (!r || !grid || this.store.layers.heatmap === 'none' || !this.ctx) {
+    if (!r || !grid || this.store.layers.heatmap === 'none' || !this.ctx || !this.store.layers.showReadout) {
       this.readout.style.display = 'none';
       return;
     }
