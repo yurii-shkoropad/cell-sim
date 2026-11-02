@@ -95,7 +95,23 @@ export function dataPanel(app: App): HTMLElement {
           store.emit('network');
         }, 'danger'),
       ),
-      h('p', { class: 'hint' }, 'The scenario is also saved automatically in this browser.'),
+      h('div', { class: 'row' },
+        button('Delete everything', () => {
+          const s = store.scenario;
+          const n = { st: s.stations.length, u: s.users?.length ?? 0, ap: s.wifi?.length ?? 0, pb: s.plannedBuildings?.length ?? 0 };
+          if (!n.st && !n.u && !n.ap && !n.pb) return toast('The scenario is already empty.', 'info');
+          if (!confirm(`Delete everything: ${n.st} stations, ${n.u} users, ${n.ap} Wi-Fi access points and ${n.pb} planned buildings? Operators, settings and loaded roads are kept.`)) return;
+          app.deleteAllUsers();
+          s.stations = [];
+          s.wifi = [];
+          s.plannedBuildings = [];
+          store.select(null);
+          store.selectAp(null);
+          app.plannedBuildingsChanged(); // also emits 'network', which saves the scenario
+          toast('Scenario cleared.', 'ok');
+        }, 'danger'),
+      ),
+      h('p', { class: 'hint' }, '“Delete everything” empties the map for a new design: stations, users, Wi-Fi access points and planned buildings. OSM buildings and roads are map data and stay. The scenario is also saved automatically in this browser.'),
     ),
     section('OpenCelliD CSV',
       h('p', { class: 'hint' }, 'Cells inside the current map view are imported from an OpenCelliD export (radio,mcc,net,area,cell,unit,lon,lat,…). LTE cells are grouped into sites by eNB ID, NR by gNB ID, and GSM by proximity. Sector azimuths point towards each cell’s estimated position. Operators are matched by PLMN. UMTS/CDMA cells are skipped. Radio parameters come from the templates below.'),
