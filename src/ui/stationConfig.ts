@@ -9,7 +9,7 @@ import type { App } from './app';
 import { beamProfile, fmtDist } from './beamProfile';
 import { buildingsAtMast, heightInfo } from './heightInfo';
 import { siteOfStation } from '../state/sites';
-import { button, checkField, clear, fmt, h, numField, selectEl, selectField, textField } from './dom';
+import { button, checkField, clear, fmt, h, numField, refreshFields, selectEl, selectField, textField, track } from './dom';
 
 const BW_OPTIONS: Record<Tech, number[]> = {
   GSM: [0.2],
@@ -102,6 +102,31 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
     const hm = store.scenario.settings.radio.ueHeightM;
     const s = bs.sectors[state.profileSector];
     const fp = verticalFootprint(bs.heightM, hm, s.tilt, s.vBeamwidth);
+    const bld = buildingsAtMast(app, bs);
+    // Height and this sector's tilt right under the drawing; the form fields above follow.
+    const profileControls = (sec: typeof s) => {
+      const edited = () => {
+        ch();
+        refreshFields();
+      };
+      const multi = (siteOfStation(store.scenario.stations, bs.id)?.stations.length ?? 1) > 1;
+      return h('div', { class: 'bp-controls' },
+        numField(multi ? 'Antenna height (this carrier)' : 'Antenna height', () => bs.heightM, (v) => {
+          bs.heightM = v;
+          edited();
+        }, { min: 1, max: 300, step: 1, unit: 'm' }),
+        bld?.roofM != null
+          ? numField('Above roof', () => +(bs.heightM - bld.roofM!).toFixed(1), (v) => {
+              bs.heightM = Math.max(1, +(bld.roofM! + v).toFixed(1));
+              edited();
+            }, { step: 1, unit: 'm', title: `Building ${fmt(bld.roofM, 0)} m + this` })
+          : '',
+        numField(`Tilt S${state.profileSector + 1}`, () => sec.tilt, (v) => {
+          sec.tilt = v;
+          edited();
+        }, { min: -10, max: 30, step: 0.5, unit: '°' }),
+      );
+    };
     profileHost.append(
       h('div', { class: 'bp-tabs' },
         ...bs.sectors.map((x, i) =>
@@ -111,7 +136,8 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
           } }, `S${i + 1}`),
         ),
       ),
-      beamProfile(bs, state.profileSector, hm, color(s.id), buildingsAtMast(app, bs)),
+      beamProfile(bs, state.profileSector, hm, color(s.id), bld),
+      profileControls(s),
       h('div', { class: 'hint' },
         Number.isFinite(fp.peak)
           ? `Boresight lands at ${fmtDist(fp.peak)}; −3 dB footprint ${fmtDist(fp.near)} – ${Number.isFinite(fp.far) ? fmtDist(fp.far) : 'horizon (upper edge never descends: overshoot risk)'}.`
@@ -384,6 +410,7 @@ function sectorRow(bs: BaseStation, s: Sector, i: number, changed: () => void, s
         chLabel.textContent = chText();
       },
     });
+    track(input, () => (input.value = String(get())));
     return input;
   };
   const chText = () => {

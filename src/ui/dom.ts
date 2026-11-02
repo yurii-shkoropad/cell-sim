@@ -37,7 +37,7 @@ export interface NumOpts {
 
 /** Inputs that can re-read their value, for refreshFields(). */
 const refreshers = new Set<{ el: HTMLElement; read: () => void }>();
-function track(el: HTMLElement, read: () => void) {
+export function track(el: HTMLElement, read: () => void) {
   refreshers.add({ el, read });
 }
 
