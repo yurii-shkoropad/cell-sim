@@ -9,7 +9,7 @@ import type { RoadGraph } from '../sim/roads';
 import type { Store } from '../state/store';
 import type { BuildingSet } from '../radio/buildings';
 import type { BaseStation, PlannedBuilding, WifiAp } from '../types';
-import { sitesOf, siteRats } from '../state/sites';
+import { siteBands, siteKeyOf, sitesOf, siteRats } from '../state/sites';
 import { wifiRangeM } from '../radio/wifi';
 
 const TECH_SHORT = { GSM: '2G', LTE: '4G', NR: '5G' } as const;
@@ -304,9 +304,18 @@ export class MapView {
       const color = op?.color ?? '#555';
       const selected = site.stations.some((b) => b.id === this.store.selectedStationId);
       const off = site.stations.every((b) => !b.enabled);
-      const rats = siteRats(site);
-      const badge = rats.map(([t, n]) => `<span>${TECH_SHORT[t]}${n > 1 ? `<sup>×${n}</sup>` : ''}</span>`).join('');
-      const w = 10 + rats.reduce((a, [, n]) => a + (n > 1 ? 30 : 18), 0);
+      // Badge: the site's bands ("B1 B3 B20"), or its RATs with carrier counts ("4G ×6").
+      let badge: string;
+      let w: number;
+      if (this.store.layers.siteBadge === 'bands') {
+        const bands = siteBands(site);
+        badge = bands.map((b) => `<span>${escapeHtml(b)}</span>`).join('');
+        w = 10 + bands.reduce((a, b) => a + 6 * b.length + 4, 0);
+      } else {
+        const rats = siteRats(site);
+        badge = rats.map(([t, n]) => `<span>${TECH_SHORT[t]}${n > 1 ? `<sup>×${n}</sup>` : ''}</span>`).join('');
+        w = 10 + rats.reduce((a, [, n]) => a + (n > 1 ? 30 : 18), 0);
+      }
       const html = `<div class="bs-icon site ${selected ? 'selected' : ''} ${off ? 'disabled' : ''}" style="--c:${color}">${badge}</div>`
         + (showNames ? `<div class="site-name">${escapeHtml(site.name)}</div>` : '');
       const icon = L.divIcon({ className: 'bs-divicon', html, iconSize: [w, 22], iconAnchor: [w / 2, 11] });
@@ -405,6 +414,7 @@ export class MapView {
         L.polygon(pts, style).addTo(this.sectorLayer);
       }
     }
+    if (this.store.layers.showPci && zoom >= 15) this.renderPci(lenM, visible);
     const sel = this.store.station(this.store.selectedStationId);
     if (sel) this.renderFootprint(sel, cellColor);
   }
@@ -739,6 +749,35 @@ export class MapView {
       this.buildingBoxes = b;
     }
     this.renderBuildings();
+  }
+
+  /**
+   * PCI (BSIC) at the tip of each sector of the visible stations. Co-located carriers pointing
+   * the same way share one label ("382 · 5 · 304"), in carrier order.
+   */
+  private renderPci(lenM: number, visible: (bs: BaseStation) => boolean) {
+    const groups = new Map<string, { lat: number; lng: number; az: number; pcis: number[] }>();
+    for (const bs of this.store.scenario.stations) {
+      if (!bs.enabled || !visible(bs)) continue;
+      for (const s of bs.sectors) {
+        if (!s.enabled) continue;
+        const az = s.hBeamwidth >= 360 ? -1 : Math.round(s.azimuth);
+        const k = `${siteKeyOf(bs)}|${az}`;
+        let g = groups.get(k);
+        if (!g) groups.set(k, (g = { lat: bs.lat, lng: bs.lng, az, pcis: [] }));
+        if (!g.pcis.includes(s.pci)) g.pcis.push(s.pci);
+      }
+    }
+    for (const g of groups.values()) {
+      const p = g.az < 0 ? { lat: g.lat, lng: g.lng } : destination(g.lat, g.lng, g.az, lenM * 1.3);
+      const text = g.pcis.join(' · ');
+      L.marker([p.lat, p.lng], {
+        pane: 'sectorPane',
+        interactive: false,
+        keyboard: false,
+        icon: L.divIcon({ className: 'pci-divicon', html: `<span class="pci-label">${text}</span>`, iconSize: [0, 0] }),
+      }).addTo(this.sectorLayer);
+    }
   }
 
   /** Preview of the outline being drawn (to the cursor). */

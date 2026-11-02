@@ -185,6 +185,9 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 .site-az { display: flex; flex-wrap: wrap; gap: 6px; }
 .site-az label { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); }
 .site-az input { width: 52px; padding: 3px; font-size: 12px; }
+.pci-divicon { background: none; border: none; }
+.pci-label { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-size: 10px; font-weight: 700; color: #1d1d1b;
+  background: rgba(255,255,255,.8); border-radius: 3px; padding: 0 3px; pointer-events: none; }
 .site-name { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); white-space: nowrap; font-size: 11px; font-weight: 600; color: #1d1d1b;
   text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff; pointer-events: none; }
 .ap-icon {

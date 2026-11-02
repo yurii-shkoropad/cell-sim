@@ -61,6 +61,24 @@ export function carrierLabel(bs: BaseStation, site: string): string {
   return rest || bs.band || bs.name;
 }
 
+/** Short band label of a station: the first word of its band ("B3 1800 (assumed)" → "B3", "n78", "GSM900"). */
+export function bandShort(bs: BaseStation): string {
+  return bs.band.trim().split(/\s+/)[0] || `${Math.round(bs.sectors[0]?.freqMHz ?? 0)}`;
+}
+
+/** Bands on a site, lowest frequency first, with a count where a band has several carriers. */
+export function siteBands(s: Site): string[] {
+  const n = new Map<string, { f: number; k: number }>();
+  for (const bs of s.stations) {
+    const b = bandShort(bs);
+    const f = bs.sectors[0]?.freqMHz ?? 0;
+    const e = n.get(b);
+    if (e) e.k++;
+    else n.set(b, { f, k: 1 });
+  }
+  return [...n.entries()].sort((a, b) => a[1].f - b[1].f).map(([b, { k }]) => (k > 1 ? `${b}×${k}` : b));
+}
+
 /** RATs present on a site, with how many stations (carriers) each. */
 export function siteRats(s: Site): [Tech, number][] {
   const n = new Map<Tech, number>();

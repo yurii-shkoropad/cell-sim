@@ -1,7 +1,7 @@
 import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { BUILDING_LEGEND } from '../../map/mapView';
 import { RSRP_PALETTES } from '../../map/colors';
-import { saveViewPrefs, SECTOR_PALETTES } from '../../state/store';
+import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES } from '../../state/store';
 import { TECHS, type CaSettings, type Tech, type TechThresholds } from '../../types';
 import type { App } from '../app';
 import { button, checkField, clear, h, numField, section, selectField } from '../dom';
@@ -246,10 +246,21 @@ export function layersPanel(app: App): HTMLElement {
           l.showSectors = v;
           app.mapView.renderSectors();
         }),
+        selectField('Site marker shows', SITE_BADGES, () => l.siteBadge, (v) => {
+          l.siteBadge = v;
+          saveViewPrefs(l);
+          app.mapView.renderStations();
+        }, 'A site groups the co-located stations (bands / RATs) of one operator'),
         checkField('Site names (from zoom 14)', () => l.showSiteNames, (v) => {
           l.showSiteNames = v;
+          saveViewPrefs(l);
           app.mapView.renderStations();
-        }, 'Name under each site marker; a site groups the co-located stations (bands / RATs) of one operator'),
+        }, 'Name under each site marker'),
+        checkField('PCI labels (from zoom 15)', () => l.showPci, (v) => {
+          l.showPci = v;
+          saveViewPrefs(l);
+          app.mapView.renderSectors();
+        }, 'PCI (BSIC for GSM) at each sector tip; co-located carriers pointing the same way share one label. Follows the operator / technology filter above.'),
         selectField('Sector colours', SECTOR_PALETTES, () => l.sectorPalette, (v) => {
           l.sectorPalette = v;
           saveViewPrefs(l);

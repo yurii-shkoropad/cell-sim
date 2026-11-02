@@ -21,6 +21,10 @@ export interface LayerState {
   showWifi: boolean;
   /** Site names under the site markers (from zoom 14). */
   showSiteNames: boolean;
+  /** What a site marker shows: its bands, or RATs with carrier counts. */
+  siteBadge: SiteBadge;
+  /** PCI (BSIC for GSM) labels at the sector tips (from zoom 15). */
+  showPci: boolean;
   /** RSRP heatmap colours, and smooth gradient instead of flat classes (remembered per browser). */
   rsrpPalette: RsrpPalette;
   rsrpSmooth: boolean;
@@ -30,6 +34,8 @@ export interface LayerState {
 
 /** 'operator': operator colour (open station in cell colours); 'cell': each cell its own colour; 'rgb': by sector number. */
 export type SectorPalette = 'operator' | 'cell' | 'rgb';
+export type SiteBadge = 'bands' | 'rat';
+export const SITE_BADGES: [SiteBadge, string][] = [['bands', 'Bands (e.g. B1 B3 B20)'], ['rat', 'Technology & carrier count (4G ×6)']];
 export const SECTOR_PALETTES: [SectorPalette, string][] = [['operator', 'Operator colour'], ['cell', 'Per cell (unique colours)'], ['rgb', 'By sector: S1 red, S2 blue, S3 green']];
 
 /** 'model': the path-loss model was switched from outside the Radio panel (it re-renders). */
@@ -39,16 +45,19 @@ type Listener = () => void;
 const STORAGE_KEY = 'radio-sim.scenario.v1';
 const VIEW_PREFS_KEY = 'radio-sim.rsrp-look';
 
-type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette'>;
+type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames'>;
 
 function loadViewPrefs(): ViewPrefs {
-  const d: ViewPrefs = { rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator' };
+  const d: ViewPrefs = { rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true };
   try {
     const v = JSON.parse(localStorage.getItem(VIEW_PREFS_KEY) ?? '{}') as Partial<LayerState>;
     return {
       rsrpPalette: v.rsrpPalette === 'classic' ? 'classic' : d.rsrpPalette,
       rsrpSmooth: v.rsrpSmooth === true,
       sectorPalette: SECTOR_PALETTES.some(([k]) => k === v.sectorPalette) ? v.sectorPalette! : d.sectorPalette,
+      siteBadge: v.siteBadge === 'rat' ? 'rat' : d.siteBadge,
+      showPci: v.showPci === true,
+      showSiteNames: v.showSiteNames !== false,
     };
   } catch {
     return d;
@@ -58,7 +67,8 @@ function loadViewPrefs(): ViewPrefs {
 /** Remember the colour choices (heatmap and sectors) in this browser. */
 export function saveViewPrefs(l: LayerState) {
   try {
-    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify({ rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette }));
+    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames };
+    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
   } catch {
     /* storage unavailable: the choice lasts for this session */
   }
@@ -80,7 +90,6 @@ export class Store {
     showRoads: false,
     showBuildings: false,
     showWifi: true,
-    showSiteNames: true,
     ...loadViewPrefs(),
   };
   private listeners = new Map<EventName, Set<Listener>>();
@@ -88,6 +97,8 @@ export class Store {
 
   constructor() {
     this.scenario = loadSaved() ?? defaultScenario();
+    // The default filter names the demo operator: a saved scenario without it would show nothing.
+    if (!this.scenario.operators.some((o) => o.id === this.layers.operatorFilter)) this.layers.operatorFilter = 'all';
   }
 
   on(ev: EventName, fn: Listener): () => void {
