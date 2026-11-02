@@ -57,6 +57,9 @@ export class MapView {
   private stationLayer = L.layerGroup();
   private sectorLayer = L.layerGroup();
   private userLayer: L.LayerGroup;
+  /** Level / SINR labels next to the users (Layers option), pooled and updated in place. */
+  private userLabelLayer = L.layerGroup();
+  private userLabels: { m: L.Marker; text: string; color: string }[] = [];
   private linkLayer: L.LayerGroup;
   private roadLayer: L.LayerGroup;
   private areaRect: L.Rectangle | null = null;
@@ -156,9 +159,11 @@ export class MapView {
     this.map.createPane('roadsPane').style.zIndex = '360';
     this.map.createPane('sectorPane').style.zIndex = '420';
     this.map.createPane('usersPane').style.zIndex = '440';
+    this.map.createPane('userLabelPane').style.zIndex = '445';
 
     this.renderer = L.canvas({ pane: 'usersPane', padding: 0.2 });
     this.userLayer = L.layerGroup().addTo(this.map);
+    this.userLabelLayer.addTo(this.map);
     this.linkLayer = L.layerGroup().addTo(this.map);
     this.roadLayer = L.layerGroup();
     this.sectorLayer.addTo(this.map);
@@ -209,6 +214,7 @@ export class MapView {
       if (this.lastEngine) this.renderUsers(this.lastEngine); // SCell link offsets are in pixels
     });
     this.map.on('moveend', () => {
+      if (this.lastEngine && this.store.layers.userLabel !== 'off') this.renderUsers(this.lastEngine); // labels only for users in view
       if (this.store.layers.showBuildings) this.renderBuildings();
     });
 
@@ -569,6 +575,38 @@ export class MapView {
 
   // ---------------------------------------------------------------- users
 
+  /** "−87 dBm" (and SINR) next to each user in view, bordered in its serving cell's colour. */
+  private renderUserLabels(engine: SimEngine) {
+    const mode = this.store.layers.userLabel;
+    const on = mode !== 'off' && this.store.layers.showUsers && this.map.getZoom() >= 15 && this.ctx;
+    let k = 0;
+    if (on) {
+      const view = this.map.getBounds().pad(0.05);
+      for (const u of engine.users) {
+        if (!view.contains([u.lat, u.lng])) continue;
+        const c = u.serving >= 0 ? this.ctx!.cells[u.serving] : undefined;
+        const wifi = engine.onWifi(u);
+        const text = !c ? 'no service' : `${Math.round(u.rx)} dBm${mode === 'rsrp-sinr' && Number.isFinite(u.sinr) ? ` · ${u.sinr.toFixed(0)} dB` : ''}${wifi ? ' · Wi-Fi' : ''}`;
+        const color = c ? this.cellColor(c) : '#999';
+        let e = this.userLabels[k];
+        if (!e) {
+          const m = L.marker([u.lat, u.lng], { pane: 'userLabelPane', interactive: false, keyboard: false, icon: L.divIcon({ className: 'pci-divicon', html: '<span class="user-label"></span>', iconSize: [0, 0] }) });
+          m.addTo(this.userLabelLayer);
+          e = this.userLabels[k] = { m, text: '', color: '' };
+        } else e.m.setLatLng([u.lat, u.lng]);
+        const span = e.m.getElement()?.firstElementChild as HTMLElement | null;
+        if (span && (e.text !== text || e.color !== color)) {
+          span.textContent = text;
+          span.style.borderColor = color;
+          e.text = text;
+          e.color = color;
+        }
+        k++;
+      }
+    }
+    while (this.userLabels.length > k) this.userLabels.pop()!.m.remove();
+  }
+
   renderUsers(engine: SimEngine) {
     this.lastEngine = engine;
     const lay = this.store.layers;
@@ -595,6 +633,7 @@ export class MapView {
       this.renderSelection(engine);
       this.renderHighlights(engine);
     }
+    this.renderUserLabels(engine);
 
     // Links: active users → serving cell (Layers option), plus every user camped
     // on the selected station (solid = active session, dashed = idle).
