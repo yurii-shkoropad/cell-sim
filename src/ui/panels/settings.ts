@@ -1,7 +1,7 @@
 import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { BUILDING_LEGEND } from '../../map/mapView';
 import { RSRP_PALETTES } from '../../map/colors';
-import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES, SITE_NAME_SIZES, USER_LABELS } from '../../state/store';
+import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES, SITE_NAME_SIZES, USER_LABELS, USER_SIZES } from '../../state/store';
 import { TECHS, type CalibratedModel, type CaSettings, type RadioSettings, type Tech, type TechThresholds } from '../../types';
 import { CAL_REF_M } from '../../radio/cells';
 import { ENV_RADIUS_M } from '../../radio/buildings';
@@ -349,6 +349,11 @@ export function layersPanel(app: App): HTMLElement {
         }, 'Best-server heatmap: sectors always use the cell colours of the heatmap.'),
         checkField('Users', () => l.showUsers, (v) => {
           l.showUsers = v;
+          app.mapView.renderUsers(app.engine);
+        }),
+        selectField('User marker size', USER_SIZES, () => String(l.userSize), (v) => {
+          l.userSize = +v;
+          saveViewPrefs(l);
           app.mapView.renderUsers(app.engine);
         }),
         selectField('User labels (from zoom 15)', USER_LABELS, () => l.userLabel, (v) => {

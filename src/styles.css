@@ -264,7 +264,7 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 
 /* user inspector (floating over the map) */
 .user-inspector {
-  position: absolute; top: 10px; right: 10px; z-index: 1001; width: min(320px, calc(100% - 70px)); max-height: calc(100% - 60px); overflow-y: auto;
+  position: absolute; top: 10px; right: 10px; z-index: 1001; width: min(320px, calc(100% - 70px)); max-height: calc(100% - 20px - max(40px, var(--legend-space, 0px))); overflow-y: auto;
   background: rgba(252,252,251,.97); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.2);
   padding: 8px 12px 12px; font-size: 12px; cursor: default;
 }

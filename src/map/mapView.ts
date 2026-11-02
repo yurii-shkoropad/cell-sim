@@ -27,10 +27,10 @@ export const WIFI_COLOR = '#7b5cd6';
 const WIFI_SVG = '<svg viewBox="0 0 16 16"><path d="M1.8 6.2a9 9 0 0 1 12.4 0M4.3 8.8a5.4 5.4 0 0 1 7.4 0M6.6 11.3a2 2 0 0 1 2.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="13.4" r="1.2" fill="currentColor"/></svg>';
 
 /** Fill = state (idle / voice / data / over Wi-Fi / no service); outline = mobility; active users are larger. */
-function userStyle(u: SimUser, onWifi: boolean): L.CircleMarkerOptions {
+function userStyle(u: SimUser, onWifi: boolean, k = 1): L.CircleMarkerOptions {
   const fill = onWifi ? WIFI_COLOR : u.serving < 0 && !u.session ? '#000' : u.session?.kind === 'voice' ? '#1565c0' : u.session?.kind === 'data' ? '#2e7d32' : '#9e9e9e';
   const stroke = u.mode === 'drive' ? '#222' : u.mode === 'static' ? '#f2b705' : '#fff';
-  return { fillColor: fill, color: stroke, weight: u.mode === 'static' ? 2 : 1, radius: u.session ? 5 : 3.5 };
+  return { fillColor: fill, color: stroke, weight: (u.mode === 'static' ? 2 : 1) * Math.sqrt(k), radius: (u.session ? 5 : 3.5) * k };
 }
 /** 'By sector' palette: S1 red, S2 blue, S3 green, then extra colours for more sectors. */
 const SECTOR_RGB = ['#e53935', '#1e5bd8', '#2e9e44', '#f39c12', '#8e44ad', '#16a2a6'];
@@ -595,6 +595,7 @@ export class MapView {
           e = this.userLabels[k] = { m, text: '', color: '' };
         } else e.m.setLatLng([u.lat, u.lng]);
         const span = e.m.getElement()?.firstElementChild as HTMLElement | null;
+        if (span) span.style.left = `${Math.round(2 + 5 * this.store.layers.userSize)}px`;
         if (span && (e.text !== text || e.color !== color)) {
           span.textContent = text;
           span.style.borderColor = color;
@@ -628,7 +629,9 @@ export class MapView {
         }
         (m as UserMarker).uid = u.id;
         m.setLatLng([u.lat, u.lng]);
-        m.setStyle(userStyle(u, engine.onWifi(u)));
+        const st = userStyle(u, engine.onWifi(u), lay.userSize);
+        m.setStyle(st);
+        m.setRadius(st.radius!);
       }
       this.renderSelection(engine);
       this.renderHighlights(engine);
@@ -708,7 +711,7 @@ export class MapView {
     if (!this.highlighted.size || !this.store.layers.showUsers) return;
     for (const u of engine.users) {
       if (!u.specId || !this.highlighted.has(u.specId)) continue;
-      L.circleMarker([u.lat, u.lng], { renderer: this.renderer, radius: 8, weight: 2, color: '#2a78d6', fill: false, interactive: false }).addTo(this.hlLayer);
+      L.circleMarker([u.lat, u.lng], { renderer: this.renderer, radius: 3 + 5 * this.store.layers.userSize, weight: 2, color: '#2a78d6', fill: false, interactive: false }).addTo(this.hlLayer);
     }
   }
 
@@ -723,6 +726,7 @@ export class MapView {
     }
     if (!this.selRing) this.selRing = L.circleMarker([u.lat, u.lng], { renderer: this.renderer, radius: 10, weight: 2.5, color: '#000', fill: false, interactive: false }).addTo(this.userLayer);
     this.selRing.setLatLng([u.lat, u.lng]);
+    this.selRing.setRadius(5 + 5 * this.store.layers.userSize);
   }
 
   /** Flag at the selected user's target and a dashed line along the rest of its route. */

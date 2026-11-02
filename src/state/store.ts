@@ -25,6 +25,8 @@ export interface LayerState {
   siteNameSize: number;
   /** Label next to each user: level to its serving cell (and SINR), from zoom 15. */
   userLabel: UserLabel;
+  /** User marker size: scale of the dots (1 = normal). */
+  userSize: number;
   /** What a site marker shows: its bands, or RATs with carrier counts. */
   siteBadge: SiteBadge;
   /** PCI (BSIC for GSM) labels at the sector tips (from zoom 16). */
@@ -41,6 +43,7 @@ export type SectorPalette = 'operator' | 'cell' | 'rgb';
 export type SiteBadge = 'bands' | 'rat' | 'none';
 export const SITE_BADGES: [SiteBadge, string][] = [['bands', 'Bands (e.g. B1 B3 B20)'], ['rat', 'Technology & carrier count (4G ×6)'], ['none', 'Nothing (plain marker)']];
 export const SITE_NAME_SIZES: [string, string][] = [['11', 'Small (11 px)'], ['14', 'Medium (14 px)'], ['18', 'Large (18 px)'], ['24', 'Extra large (24 px)'], ['32', 'Huge (32 px, for slides)']];
+export const USER_SIZES: [string, string][] = [['1', 'Normal'], ['1.6', 'Large'], ['2.2', 'Extra large'], ['3', 'Huge (for slides)']];
 export type UserLabel = 'off' | 'rsrp' | 'rsrp-sinr';
 export const USER_LABELS: [UserLabel, string][] = [['off', 'Off'], ['rsrp', 'Level to serving cell (dBm)'], ['rsrp-sinr', 'Level and SINR']];
 export const SECTOR_PALETTES: [SectorPalette, string][] = [['operator', 'Operator colour'], ['cell', 'Per cell (unique colours)'], ['rgb', 'By sector: S1 red, S2 blue, S3 green']];
@@ -52,9 +55,9 @@ type Listener = () => void;
 const STORAGE_KEY = 'radio-sim.scenario.v1';
 const VIEW_PREFS_KEY = 'radio-sim.rsrp-look';
 
-type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel'>;
+type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel' | 'userSize'>;
 
-const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: 'off' });
+const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: 'off', userSize: 1 });
 
 const defaultLayers = (): Omit<LayerState, keyof ViewPrefs> => ({
   heatmap: 'rsrp',
@@ -81,6 +84,7 @@ function loadViewPrefs(): ViewPrefs {
       siteBadge: v.siteBadge === 'rat' || v.siteBadge === 'none' ? v.siteBadge : d.siteBadge,
       showPci: v.showPci === true,
       showSiteNames: v.showSiteNames !== false,
+      userSize: USER_SIZES.some(([k]) => +k === v.userSize) ? v.userSize! : d.userSize,
       userLabel: USER_LABELS.some(([k]) => k === v.userLabel) ? v.userLabel! : d.userLabel,
       siteNameSize: SITE_NAME_SIZES.some(([k]) => +k === v.siteNameSize) ? v.siteNameSize! : d.siteNameSize,
     };
@@ -92,7 +96,7 @@ function loadViewPrefs(): ViewPrefs {
 /** Remember the colour choices (heatmap and sectors) in this browser. */
 export function saveViewPrefs(l: LayerState) {
   try {
-    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames, siteNameSize: l.siteNameSize, userLabel: l.userLabel };
+    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames, siteNameSize: l.siteNameSize, userLabel: l.userLabel, userSize: l.userSize };
     localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
   } catch {
     /* storage unavailable: the choice lasts for this session */

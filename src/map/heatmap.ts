@@ -53,6 +53,11 @@ export class HeatmapLayer {
     const Legend = L.Control.extend({ onAdd: () => this.legendEl });
     this.legend = new Legend({ position: 'bottomright' });
     this.legend.addTo(map);
+    // Floating panels (station / user inspectors) stop above the legend: expose the space it takes.
+    const reserve = () => this.reserveLegendSpace();
+    new ResizeObserver(reserve).observe(this.legendEl);
+    map.on('resize', reserve);
+    window.addEventListener('resize', reserve);
 
     this.readout = L.DomUtil.create('div', 'readout', map.getContainer());
     this.readout.style.display = 'none';
@@ -265,7 +270,20 @@ export class HeatmapLayer {
     this.overlay?.setOpacity(o);
   }
 
+  /** Space the legend takes at the bottom of the map, as --legend-space for the floating inspectors. */
+  private reserveLegendSpace() {
+    const container = this.map.getContainer();
+    const shown = this.legendEl.style.display !== 'none' && this.legendEl.offsetHeight > 0;
+    const space = shown ? container.getBoundingClientRect().bottom - this.legendEl.getBoundingClientRect().top : 0;
+    container.style.setProperty('--legend-space', `${Math.max(0, Math.round(space))}px`);
+  }
+
   private renderLegend() {
+    this.renderLegendContent();
+    this.reserveLegendSpace();
+  }
+
+  private renderLegendContent() {
     const kind = this.store.layers.heatmap;
     const el = this.legendEl;
     el.innerHTML = '';
