@@ -2,11 +2,11 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { destination } from '../geo';
 import { verticalFootprint } from '../radio/antenna';
-import type { CellRF, RadioContext } from '../radio/cells';
+import { linkModulation, linkRank, peakRateMbps, type CellRF, type RadioContext } from '../radio/cells';
 import type { SimEngine, SimUser } from '../sim/engine';
 import type { Zone } from '../sim/population';
 import type { RoadGraph } from '../sim/roads';
-import type { Store } from '../state/store';
+import { anyUserLabel, type Store } from '../state/store';
 import type { BuildingSet } from '../radio/buildings';
 import type { BaseStation, PlannedBuilding, WifiAp } from '../types';
 import { siteBands, siteKeyOf, sitesOf, siteRats } from '../state/sites';
@@ -214,7 +214,7 @@ export class MapView {
       if (this.lastEngine) this.renderUsers(this.lastEngine); // SCell link offsets are in pixels
     });
     this.map.on('moveend', () => {
-      if (this.lastEngine && this.store.layers.userLabel !== 'off') this.renderUsers(this.lastEngine); // labels only for users in view
+      if (this.lastEngine && anyUserLabel(this.store.layers.userLabel)) this.renderUsers(this.lastEngine); // labels only for users in view
       if (this.store.layers.showBuildings) this.renderBuildings();
     });
 
@@ -575,10 +575,11 @@ export class MapView {
 
   // ---------------------------------------------------------------- users
 
-  /** "−87 dBm" (and SINR) next to each user in view, bordered in its serving cell's colour. */
+  /** "−87 dBm · 9 dB · 64QAM · 42 Mbps" (the ticked fields) next to each user in view, bordered in its serving cell's colour. */
   private renderUserLabels(engine: SimEngine) {
-    const mode = this.store.layers.userLabel;
-    const on = mode !== 'off' && this.store.layers.showUsers && this.map.getZoom() >= 15 && this.ctx;
+    const f = this.store.layers.userLabel;
+    const on = anyUserLabel(f) && this.store.layers.showUsers && this.map.getZoom() >= 15 && this.ctx;
+    const radio = this.store.scenario.settings.radio;
     let k = 0;
     if (on) {
       const view = this.map.getBounds().pad(0.05);
@@ -586,7 +587,22 @@ export class MapView {
         if (!view.contains([u.lat, u.lng])) continue;
         const c = u.serving >= 0 ? this.ctx!.cells[u.serving] : undefined;
         const wifi = engine.onWifi(u);
-        const text = !c ? 'no service' : `${Math.round(u.rx)} dBm${mode === 'rsrp-sinr' && Number.isFinite(u.sinr) ? ` · ${u.sinr.toFixed(0)} dB` : ''}${wifi ? ' · Wi-Fi' : ''}`;
+        let text = 'no service';
+        if (c) {
+          const parts: string[] = [];
+          if (f.level) parts.push(`${Math.round(u.rx)} dBm`);
+          if (f.sinr && Number.isFinite(u.sinr)) parts.push(`${u.sinr.toFixed(0)} dB`);
+          if ((f.mod || f.peak) && Number.isFinite(u.sinr)) {
+            const ueRx = engine.ueRx(u);
+            if (f.mod) parts.push(linkModulation(c, linkRank(c, u.sinr, ueRx, radio))?.label.replace(/ \(.*\)$/, '') ?? '—');
+            if (f.peak && c.tech !== 'GSM') {
+              const p = peakRateMbps(c, u.sinr, radio, ueRx);
+              parts.push(`${p >= 100 ? p.toFixed(0) : p.toFixed(1)} Mbps`);
+            }
+          }
+          if (wifi) parts.push('Wi-Fi');
+          text = parts.join(' · ');
+        }
         const color = c ? this.cellColor(c) : '#999';
         let e = this.userLabels[k];
         if (!e) {

@@ -1,7 +1,7 @@
 import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { BUILDING_LEGEND } from '../../map/mapView';
 import { RSRP_PALETTES } from '../../map/colors';
-import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES, SITE_NAME_SIZES, USER_LABELS, USER_SIZES } from '../../state/store';
+import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES, SITE_NAME_SIZES, USER_LABEL_FIELDS, USER_SIZES } from '../../state/store';
 import { TECHS, type CalibratedModel, type CaSettings, type RadioSettings, type Tech, type TechThresholds } from '../../types';
 import { CAL_REF_M } from '../../radio/cells';
 import { ENV_RADIUS_M } from '../../radio/buildings';
@@ -356,11 +356,17 @@ export function layersPanel(app: App): HTMLElement {
           saveViewPrefs(l);
           app.mapView.renderUsers(app.engine);
         }),
-        selectField('User labels (from zoom 15)', USER_LABELS, () => l.userLabel, (v) => {
-          l.userLabel = v;
-          saveViewPrefs(l);
-          app.mapView.renderUsers(app.engine);
-        }, 'Next to each user: its level to the serving cell (RSRP, RxLev for GSM), framed in that cell’s colour'),
+        h('div', { class: 'field', title: 'Label next to each user, framed in its serving cell’s colour' },
+          h('span', { class: 'lbl' }, 'User labels (from zoom 15)'),
+          h('span', { class: 'ctl label-fields' }, ...USER_LABEL_FIELDS.map(([k, label, title]) => {
+            const cb = h('input', { type: 'checkbox', checked: l.userLabel[k], onchange: () => {
+              l.userLabel[k] = cb.checked;
+              saveViewPrefs(l);
+              app.mapView.renderUsers(app.engine);
+            } });
+            return h('label', { title }, cb, label);
+          })),
+        ),
         checkField('Wi-Fi APs and association range', () => l.showWifi, (v) => {
           l.showWifi = v;
           app.mapView.renderWifi();
