@@ -19,6 +19,8 @@ export interface LayerState {
   showBuildings: boolean;
   /** Wi-Fi APs and their association range. */
   showWifi: boolean;
+  /** Site names under the site markers (from zoom 14). */
+  showSiteNames: boolean;
   /** RSRP heatmap colours, and smooth gradient instead of flat classes (remembered per browser). */
   rsrpPalette: RsrpPalette;
   rsrpSmooth: boolean;
@@ -78,6 +80,7 @@ export class Store {
     showRoads: false,
     showBuildings: false,
     showWifi: true,
+    showSiteNames: true,
     ...loadViewPrefs(),
   };
   private listeners = new Map<EventName, Set<Listener>>();

@@ -54,6 +54,8 @@ export interface SectorHo {
 export interface BaseStation {
   id: string;
   name: string;
+  /** Name of the site (mast) shared by co-located stations; missing = derived from their names. */
+  siteName?: string;
   lat: number;
   lng: number;
   operatorId: string;

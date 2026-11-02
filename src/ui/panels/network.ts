@@ -1,6 +1,8 @@
 import { hexGrid, randomSites } from '../../planning/patterns';
 import { cellColor } from '../../radio/cells';
 import { makeStation, newId, PRESETS, presetByKey } from '../../radio/presets';
+import { carrierLabel, sitesOf, siteRats } from '../../state/sites';
+import type { BaseStation } from '../../types';
 import type { App } from '../app';
 import { button, clear, colorField, h, numField, section, selectField, textField, toast } from '../dom';
 
@@ -146,7 +148,10 @@ export function networkPanel(app: App): HTMLElement {
     clear(listHost);
     const ops = new Map(store.scenario.operators.map((o) => [o.id, o]));
     const q = filter.toLowerCase();
-    const items = store.scenario.stations.filter((s) => !q || s.name.toLowerCase().includes(q) || s.band.toLowerCase().includes(q) || s.tech.toLowerCase().includes(q) || (ops.get(s.operatorId)?.name.toLowerCase().includes(q) ?? false));
+    const match = (st: BaseStation) => !q || st.name.toLowerCase().includes(q) || st.band.toLowerCase().includes(q) || st.tech.toLowerCase().includes(q) || (ops.get(st.operatorId)?.name.toLowerCase().includes(q) ?? false);
+    // One row per site (co-located stations of an operator); its carriers unfold under the open site.
+    const sites = sitesOf(store.scenario.stations).filter((site) => (q && site.name.toLowerCase().includes(q)) || site.stations.some(match));
+    const items = sites.flatMap((site) => site.stations);
     const search = h('input', { type: 'search', placeholder: 'Filter by name, tech, band, operator', value: filter, oninput: () => {
       filter = search.value;
       renderList();
@@ -154,22 +159,31 @@ export function networkPanel(app: App): HTMLElement {
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     } });
+    const open = (id: string) => {
+      app.mapView.setPlaceMode(null); // picking an existing site ends placement
+      store.select(id);
+      app.mapView.focusStation(id);
+    };
     listHost.appendChild(
       section(
-        `Stations (${store.scenario.stations.length})`,
+        `Sites (${sitesOf(store.scenario.stations).length}) · ${store.scenario.stations.length} stations`,
         search,
         h('div', { class: 'st-list' },
-          ...items.map((s) =>
-            h('div', { class: `st-item ${store.selectedStationId === s.id ? 'sel' : ''} ${s.enabled ? '' : 'off'}`, onclick: () => {
-              app.mapView.setPlaceMode(null); // picking an existing site ends placement
-              store.select(s.id);
-              app.mapView.focusStation(s.id);
-            } },
-              h('span', { class: 'dot', style: `background:${ops.get(s.operatorId)?.color ?? '#888'}` }),
-              h('span', { class: 'nm' }, s.name),
-              h('span', { class: 'meta' }, `${s.tech} ${s.band} · ${s.sectors.length}×`),
-            ),
-          ),
+          ...sites.flatMap((site) => {
+            const isOpen = site.stations.some((b) => b.id === store.selectedStationId);
+            const rats = siteRats(site).map(([t, n]) => `${t}${n > 1 ? ` ×${n}` : ''}`).join(' + ');
+            const bands = [...new Set(site.stations.map((b) => b.band.replace(/ \(assumed\)$/, '')))].join(', ');
+            const row = h('div', { class: `st-item ${isOpen ? 'sel' : ''} ${site.stations.every((b) => !b.enabled) ? 'off' : ''}`, title: bands, onclick: () => open(isOpen ? store.selectedStationId! : site.stations[0].id) },
+              h('span', { class: 'dot', style: `background:${ops.get(site.operatorId)?.color ?? '#888'}` }),
+              h('span', { class: 'nm' }, site.name),
+              h('span', { class: 'meta' }, site.stations.length > 1 ? `${rats} · ${site.stations.length} carriers` : `${site.stations[0].tech} ${site.stations[0].band} · ${site.stations[0].sectors.length}×`),
+            );
+            if (!isOpen || site.stations.length < 2) return [row];
+            return [row, ...site.stations.map((b) => h('div', { class: `st-item sub ${b.id === store.selectedStationId ? 'sel' : ''} ${b.enabled ? '' : 'off'}`, onclick: () => open(b.id) },
+              h('span', { class: 'nm' }, carrierLabel(b, site.name)),
+              h('span', { class: 'meta' }, `${b.tech} ${b.band} · ${b.sectors.length}×`),
+            ))];
+          }),
         ),
         store.scenario.stations.length
           ? h('div', { class: 'row' }, button('Delete all listed', () => {

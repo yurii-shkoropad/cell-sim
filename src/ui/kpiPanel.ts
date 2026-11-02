@@ -3,6 +3,7 @@ import type { SimUser } from '../sim/engine';
 import { EVENT_COLOR, EVENT_LABEL, EVENT_TYPES, percentile, TIMELINE_BUCKET_S, type SimEvent, type SimEventType } from '../sim/kpi';
 import { jainIndex, SCHEDULERS, schedulerInfo } from '../sim/scheduler';
 import type { App } from './app';
+import { carrierLabel, siteOfStation } from '../state/sites';
 import { clear, fmt, h } from './dom';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, LogarithmicScale, CategoryScale, BarController, BarElement, Legend, Tooltip, Filler);
@@ -53,8 +54,11 @@ export function fmtTime(s: number): string {
 
 // ---------------------------------------------------------------- scopes
 
-/** What the KPI panel shows: the whole network, one site (all its sectors), or one sector. */
-type Scope = { kind: 'network' } | { kind: 'site'; bsId: string } | { kind: 'cell'; bsId: string; sectorId: string };
+/**
+ * What the KPI panel shows: the whole network, one site (every carrier on the mast), one
+ * station (a single carrier of a multi-carrier site), or one sector.
+ */
+type Scope = { kind: 'network' } | { kind: 'site'; bsId: string } | { kind: 'station'; bsId: string } | { kind: 'cell'; bsId: string; sectorId: string };
 
 /** One second of statistics for the current scope. */
 interface Row {
@@ -302,7 +306,8 @@ export function kpiPanel(app: App): HTMLElement {
         })),
       };
     }
-    const sectorIds = scope.kind === 'cell' ? [scope.sectorId] : bs.sectors.map((s) => s.id);
+    const site = siteOfStation(store.scenario.stations, bs.id)!;
+    const sectorIds = scope.kind === 'cell' ? [scope.sectorId] : scope.kind === 'site' ? site.stations.flatMap((b) => b.sectors.map((s) => s.id)) : bs.sectors.map((s) => s.id);
     const cells = ctx.cells.map((c, i) => (sectorIds.includes(c.sectorId) ? i : -1)).filter((i) => i >= 0);
     const cellSet = new Set(cells);
     // Merge sector histories by sample time.
@@ -331,7 +336,7 @@ export function kpiPanel(app: App): HTMLElement {
       .map((r) => ({ ...r, util: r.resW ? r.loadW / r.resW : 0, meanThr: r.data ? r.thrW / r.data : 0, p5Thr: Number.isFinite(r.p5Min) ? r.p5Min : 0, sinr: r.camped ? r.sinrW / r.camped : NaN }));
     const secIdx = scope.kind === 'cell' ? bs.sectors.findIndex((s) => s.id === (scope as { sectorId: string }).sectorId) : -1;
     return {
-      title: scope.kind === 'cell' ? `${bs.name} · S${secIdx + 1}` : `Site ${bs.name}`,
+      title: scope.kind === 'cell' ? `${bs.name} · S${secIdx + 1}` : scope.kind === 'site' ? `Site ${site.name}` : bs.name,
       cells,
       users: engine.users.filter((u) => cellSet.has(u.serving)),
       cellNames: new Set(cells.map((i) => ctx.cells[i].name)),
@@ -351,7 +356,10 @@ export function kpiPanel(app: App): HTMLElement {
       } }, label);
     scopeBar.append(h('span', { class: 'scope-lbl' }, 'KPIs for'), chip('Network', scope.kind === 'network', '#52514e', () => (scope = { kind: 'network' })));
     if (bs) {
-      scopeBar.appendChild(chip(`Site ${bs.name}`, scope.kind === 'site', store.scenario.operators.find((o) => o.id === bs.operatorId)?.color ?? '#888', () => (scope = { kind: 'site', bsId: bs.id }), 'All sectors of the selected station'));
+      const site = siteOfStation(store.scenario.stations, bs.id)!;
+      const opColor = store.scenario.operators.find((o) => o.id === bs.operatorId)?.color ?? '#888';
+      scopeBar.appendChild(chip(`Site ${site.name}`, scope.kind === 'site', opColor, () => (scope = { kind: 'site', bsId: bs.id }), site.stations.length > 1 ? `Every carrier on the site (${site.stations.length})` : 'All sectors of the selected station'));
+      if (site.stations.length > 1) scopeBar.appendChild(chip(carrierLabel(bs, site.name), scope.kind === 'station', opColor, () => (scope = { kind: 'station', bsId: bs.id }), `Only ${bs.name} (${bs.tech} ${bs.band})`));
       bs.sectors.forEach((s, i) => {
         const c = ctx.cells.find((x) => x.sectorId === s.id);
         if (!c) return;

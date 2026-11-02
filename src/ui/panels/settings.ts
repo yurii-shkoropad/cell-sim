@@ -246,6 +246,10 @@ export function layersPanel(app: App): HTMLElement {
           l.showSectors = v;
           app.mapView.renderSectors();
         }),
+        checkField('Site names (from zoom 14)', () => l.showSiteNames, (v) => {
+          l.showSiteNames = v;
+          app.mapView.renderStations();
+        }, 'Name under each site marker; a site groups the co-located stations (bands / RATs) of one operator'),
         selectField('Sector colours', SECTOR_PALETTES, () => l.sectorPalette, (v) => {
           l.sectorPalette = v;
           saveViewPrefs(l);

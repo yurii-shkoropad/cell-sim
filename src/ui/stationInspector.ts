@@ -8,9 +8,10 @@ import { schedulerInfo } from '../sim/scheduler';
 import type { BaseStation } from '../types';
 import { isolateFromMap } from '../map/mapView';
 import type { App } from './app';
-import { button, clear, fmt, h } from './dom';
+import { button, clear, fmt, h, numField, textField } from './dom';
 import { fmtTime } from './kpiPanel';
 import { renderStationConfig } from './stationConfig';
+import { carrierLabel, siteOfStation, type Site } from '../state/sites';
 
 type Tab = 'overview' | 'config';
 const MAX_USER_ROWS = 60;
@@ -83,8 +84,58 @@ export class StationInspector {
         this.render();
       } }, label));
     }
-    if (this.tab === 'config') renderStationConfig(this.app, bs, this.body, this.cfgState);
+    if (this.tab === 'config') this.renderConfig(bs);
     else this.renderOverview();
+  }
+
+  /**
+   * Configure: site-wide settings applied to every carrier (name, position, height, sector
+   * azimuths), then the selected carrier's own settings.
+   */
+  private renderConfig(bs: BaseStation) {
+    const { store } = this.app;
+    const site = this.site()!;
+    clear(this.body);
+    const carrierHost = h('div');
+    if (site.stations.length > 1) {
+      const all = site.stations;
+      const changed = () => store.emit('network');
+      const num = (label: string, get: () => number, set: (v: number) => void, opts: { step?: number; unit?: string; title?: string } = {}) =>
+        numField(label, get, (v) => {
+          set(v);
+          changed();
+        }, opts);
+      // One field per direction on the site (carriers can have different subsets of sectors):
+      // editing it turns every carrier's sector that points that way.
+      const dirs = [...new Set(all.flatMap((b) => b.sectors.map((x) => x.azimuth)))].sort((x, y) => x - y);
+      const az = h('div', { class: 'site-az' }, ...dirs.map((d, i) => {
+        const n = all.reduce((k, b) => k + b.sectors.filter((x) => x.azimuth === d).length, 0);
+        const input = h('input', { type: 'number', step: '5', value: String(d), title: `Turn the ${n} sector${n > 1 ? 's' : ''} pointing ${d}° on every carrier`, onchange: () => {
+          const v = parseFloat(input.value);
+          if (!Number.isFinite(v)) return;
+          for (const b of all) for (const x of b.sectors) if (x.azimuth === d) x.azimuth = ((v % 360) + 360) % 360;
+          changed();
+          this.renderConfig(bs);
+        } });
+        return h('label', { title: `${n} cell${n > 1 ? 's' : ''}` }, `${i + 1}`, input, `° (${n})`);
+      }));
+      this.body.append(
+        h('h4', null, `Site · ${all.length} carriers`),
+        textField('Site name', () => site.name, (v) => {
+          for (const b of all) b.siteName = v.trim() || undefined;
+          changed();
+          this.renderHead(bs);
+        }),
+        num('Latitude', () => site.lat, (v) => all.forEach((b) => (b.lat = v)), { step: 0.0001 }),
+        num('Longitude', () => site.lng, (v) => all.forEach((b) => (b.lng = v)), { step: 0.0001 }),
+        num('Antenna height (all)', () => bs.heightM, (v) => all.forEach((b) => (b.heightM = v)), { step: 1, unit: 'm', title: 'Sets the height of every carrier on the site' }),
+        h('div', { class: 'field' }, h('span', { class: 'lbl' }, 'Sector directions (all carriers)'), az),
+        h('p', { class: 'hint' }, 'These apply to every carrier on the site. Below: the carrier selected in the header (its band, power, tilt, PCI…).'),
+        h('h4', null, `Carrier · ${carrierLabel(bs, site.name)} · ${bs.tech} ${bs.band}`),
+        carrierHost,
+      );
+    } else this.body.append(carrierHost);
+    renderStationConfig(this.app, bs, carrierHost, this.cfgState);
   }
 
   /** Re-render after an edit elsewhere, without rebuilding the config form the user is typing in. */
@@ -95,21 +146,40 @@ export class StationInspector {
     if (this.tab === 'overview') this.renderOverview();
   }
 
+  private site(): Site | undefined {
+    return siteOfStation(this.app.store.scenario.stations, this.id);
+  }
+
   private renderHead(bs: BaseStation) {
     const { store } = this.app;
+    const site = this.site()!;
+    const multi = site.stations.length > 1;
     const op = store.scenario.operators.find((o) => o.id === bs.operatorId);
     const ant = antennaType(validAntennaFor(bs.tech, bs.antennaType));
     const mod = modulation(validModulationFor(bs.tech, bs.maxModulation));
     const sched = bs.tech === 'GSM' ? null : (schedulerInfo(bs.scheduler) ?? schedulerInfo(store.scenario.settings.radio.scheduler));
-    const onAir = h('input', { type: 'checkbox', checked: bs.enabled, onchange: () => {
-      bs.enabled = onAir.checked;
+    // Site on air = every carrier on air (each carrier also has its own switch in Configure).
+    const onAir = h('input', { type: 'checkbox', checked: site.stations.some((b) => b.enabled), onchange: () => {
+      for (const b of site.stations) b.enabled = onAir.checked;
       store.emit('network');
     } });
+    // Carriers of the site: pick the one shown in the header line and edited in Configure.
+    const carriers = multi
+      ? h('div', { class: 'si-carriers' }, ...site.stations.map((b) => h('button', {
+          type: 'button',
+          class: `chip ${b.id === bs.id ? 'on' : ''} ${b.enabled ? '' : 'off'}`,
+          style: `--c:${op?.color ?? '#888'}`,
+          title: `${b.name} · ${b.tech} ${b.band}${b.enabled ? '' : ' (off air)'}`,
+          onclick: () => store.select(b.id),
+        }, `${carrierLabel(b, site.name)} · ${b.band.replace(/ \(assumed\)$/, '')}`)))
+      : null;
     clear(this.head);
     this.head.append(
       h('div', { class: 'si-title' },
-        h('div', { class: 'ui-title' }, h('span', { class: 'dot', style: `background:${op?.color ?? '#888'}` }), h('b', null, bs.name), h('span', { class: 'muted' }, ` · ${op?.name ?? '?'}`)),
+        h('div', { class: 'ui-title' }, h('span', { class: 'dot', style: `background:${op?.color ?? '#888'}` }), h('b', null, site.name), h('span', { class: 'muted' }, ` · ${op?.name ?? '?'}${multi ? ` · ${site.stations.length} carriers` : ''}`)),
+        carriers,
         h('div', { class: 'si-sub' }, [
+          multi ? `${carrierLabel(bs, site.name)}:` : null,
           `${bs.tech} ${bs.band}`,
           bs.tech === 'GSM' ? `${bs.trxCount} TRX` : `${bs.bandwidthMHz} MHz`,
           bs.tech === 'GSM' ? null : ant.label,
@@ -118,7 +188,7 @@ export class StationInspector {
         ].filter(Boolean).join(' · ')),
       ),
       h('div', { class: 'si-actions' },
-        h('label', { class: 'si-onair', title: 'Station transmitting' }, onAir, 'On air'),
+        h('label', { class: 'si-onair', title: multi ? 'Every carrier of the site transmitting' : 'Station transmitting' }, onAir, 'On air'),
         button('⌖', () => this.app.mapView.focusStation(bs.id), 'icon', 'Centre the map on this site'),
         button('✕', () => store.select(null), 'icon', 'Close'),
       ),
@@ -135,10 +205,13 @@ export class StationInspector {
     const r = store.scenario.settings.radio;
     const thr = store.scenario.settings.thresholds;
 
-    const cells: { s: number; idx: number; c: CellRF; st: CellState }[] = [];
-    bs.sectors.forEach((s, si) => {
+    /** Every cell of every carrier on the site; label = sector (with the carrier when there are several). */
+    const cells: { s: number; idx: number; c: CellRF; st: CellState; bs: BaseStation; label: string }[] = [];
+    const site = this.site()!;
+    const multi = site.stations.length > 1;
+    for (const b of site.stations) b.sectors.forEach((s, si) => {
       const idx = ctx.cells.findIndex((c) => c.sectorId === s.id);
-      if (idx >= 0) cells.push({ s: si, idx, c: ctx.cells[idx], st: engine.cells[idx] });
+      if (idx >= 0) cells.push({ s: si, idx, c: ctx.cells[idx], st: engine.cells[idx], bs: b, label: multi ? `${carrierLabel(b, site.name)} S${si + 1}` : `S${si + 1}` });
     });
     const byIdx = new Map(cells.map((x) => [x.idx, x]));
     const users = engine.users.filter((u) => u.serving >= 0 && byIdx.has(u.serving));
@@ -153,8 +226,8 @@ export class StationInspector {
     const kv = (k: string, v: string, cls = '') => h('div', { class: `kv ${cls}` }, h('span', null, k), h('b', null, v));
     clear(this.body);
 
-    if (!bs.enabled || !cells.length) {
-      this.body.append(h('p', { class: 'hint' }, bs.enabled ? 'No sectors on air.' : 'Station is off air: turn it on to see live statistics.'));
+    if (!cells.length) {
+      this.body.append(h('p', { class: 'hint' }, site.stations.some((b) => b.enabled) ? 'No sectors on air.' : 'Site is off air: turn it on to see live statistics.'));
       return;
     }
 
@@ -178,7 +251,7 @@ export class StationInspector {
     // Per-sector cards
     this.body.append(h('h4', null, 'Sectors'));
     for (const x of cells) {
-      const sec = bs.sectors[x.s];
+      const sec = x.bs.sectors[x.s];
       const su = users.filter((u) => u.serving === x.idx);
       const sa = su.filter((u) => u.session);
       const sSinr = su.map((u) => u.sinr).filter(Number.isFinite);
@@ -188,7 +261,7 @@ export class StationInspector {
         h('div', { class: 'si-card' },
           h('div', { class: 'si-card-head' },
             h('span', { class: 'dot', style: `background:${x.c.color}` }),
-            h('b', null, `S${x.s + 1}`),
+            h('b', null, x.label),
             h('span', { class: 'muted' }, `az ${sec.azimuth}° · ${x.c.tech === 'GSM' ? 'BSIC' : 'PCI'} ${sec.pci} · ${sec.freqMHz} MHz`),
           ),
           h('div', { class: 'si-bar', title: 'PRB / TCH utilisation' }, h('i', { style: `width:${Math.min(100, pct)}%;background:${pct >= 90 ? '#c0392b' : pct >= 70 ? '#eda100' : '#2a78d6'}` }), h('span', null, `${pct}% · ${cap}`)),
@@ -201,7 +274,7 @@ export class StationInspector {
             h('span', { title: 'handovers in / out' }, `HO ${x.st.hoIn}↓ ${x.st.hoOut}↑`),
             (() => {
               const hp = this.app.engine.hoParams(x.idx);
-              const custom = !!bs.sectors[x.s].ho;
+              const custom = !!x.bs.sectors[x.s].ho;
               return h('span', { class: custom ? 'ho-custom' : '', title: custom ? 'Per-cell handover parameters (Configure tab)' : 'RAT default handover parameters' }, `hys ${hp.hysteresisDb} · off ${hp.a3OffsetDb} · TTT ${hp.tttMs}${hp.cioDb ? ` · CIO ${hp.cioDb > 0 ? '+' : ''}${hp.cioDb}` : ''}`);
             })(),
             h('span', { title: 'drops / blocks' }, `✖${x.st.drops} ⛔${x.st.blocks}`),
@@ -221,7 +294,7 @@ export class StationInspector {
       // mousedown: this table is rebuilt every 500 ms, which can swallow a click.
       return h('tr', { class: `si-user ${state}`, title: 'Open this user', onmousedown: () => this.app.openUser(u.id) },
         h('td', null, h('span', { class: `st-dot ${state}` }), u.name ?? `UE${u.id}`),
-        h('td', null, `S${x.s + 1}`),
+        h('td', null, x.label),
         h('td', { class: u.rx < minRx + 6 ? 'bad' : '' }, fmt(u.rx, 0)),
         h('td', { class: u.sinr < 0 ? 'bad' : '' }, fmt(u.sinr, 1)),
         h('td', null, u.session && x.c.tech !== 'GSM' ? String(lk.rank) : ''),

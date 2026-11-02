@@ -9,6 +9,7 @@ import type { RoadGraph } from '../sim/roads';
 import type { Store } from '../state/store';
 import type { BuildingSet } from '../radio/buildings';
 import type { BaseStation, PlannedBuilding, WifiAp } from '../types';
+import { sitesOf, siteRats } from '../state/sites';
 import { wifiRangeM } from '../radio/wifi';
 
 const TECH_SHORT = { GSM: '2G', LTE: '4G', NR: '5G' } as const;
@@ -194,7 +195,7 @@ export class MapView {
     });
     this.hlLayer.addTo(this.map);
     this.map.on('zoomend', () => {
-      this.renderSectors();
+      this.renderStations(); // site names come and go with the zoom; also redraws the sectors
       if (this.lastEngine) this.renderUsers(this.lastEngine); // SCell link offsets are in pixels
     });
     this.map.on('moveend', () => {
@@ -288,61 +289,73 @@ export class MapView {
 
   // ---------------------------------------------------------------- stations
 
+  /**
+   * One marker per site (co-located stations of an operator): the RATs on it, a carrier count
+   * when there are several, and the site name below it. Dragging moves every station of the site.
+   */
   renderStations() {
     const scn = this.store.scenario;
     const ops = new Map(scn.operators.map((o) => [o.id, o]));
     const seen = new Set<string>();
-    /** Same-RAT stations already drawn at a spot (extra carriers of one site), to stack their icons. */
-    const stacked = new Map<string, number>();
-    for (const bs of scn.stations) {
-      seen.add(bs.id);
-      const spot = `${bs.tech}:${bs.lat.toFixed(4)},${bs.lng.toFixed(4)}`;
-      const level = stacked.get(spot) ?? 0;
-      stacked.set(spot, level + 1);
-      const op = ops.get(bs.operatorId);
+    const showNames = this.store.layers.showSiteNames && this.map.getZoom() >= 14;
+    for (const site of sitesOf(scn.stations)) {
+      seen.add(site.key);
+      const op = ops.get(site.operatorId);
       const color = op?.color ?? '#555';
-      const selected = this.store.selectedStationId === bs.id;
-      const html = `<div class="bs-icon ${selected ? 'selected' : ''} ${bs.enabled ? '' : 'disabled'}" style="--c:${color}" title="${escapeHtml(`${bs.name} · ${bs.band}`)}"><span>${TECH_SHORT[bs.tech]}</span></div>`;
-      // Nudge icons by RAT so co-located 2G/4G/5G sites stay individually clickable,
-      // and stack further carriers of the same RAT on the site above each other.
-      const dx = bs.tech === 'GSM' ? 13 : bs.tech === 'NR' ? -13 : 0;
-      const icon = L.divIcon({ className: 'bs-divicon', html, iconSize: [22, 22], iconAnchor: [11 + dx, 11 + 20 * level] });
-      let m = this.markers.get(bs.id);
+      const selected = site.stations.some((b) => b.id === this.store.selectedStationId);
+      const off = site.stations.every((b) => !b.enabled);
+      const rats = siteRats(site);
+      const badge = rats.map(([t, n]) => `<span>${TECH_SHORT[t]}${n > 1 ? `<sup>×${n}</sup>` : ''}</span>`).join('');
+      const w = 10 + rats.reduce((a, [, n]) => a + (n > 1 ? 30 : 18), 0);
+      const html = `<div class="bs-icon site ${selected ? 'selected' : ''} ${off ? 'disabled' : ''}" style="--c:${color}">${badge}</div>`
+        + (showNames ? `<div class="site-name">${escapeHtml(site.name)}</div>` : '');
+      const icon = L.divIcon({ className: 'bs-divicon', html, iconSize: [w, 22], iconAnchor: [w / 2, 11] });
+      let m = this.markers.get(site.key);
       if (!m) {
-        m = L.marker([bs.lat, bs.lng], { icon, draggable: true, autoPan: true, zIndexOffset: 1000 });
+        m = L.marker([site.lat, site.lng], { icon, draggable: true, autoPan: true, zIndexOffset: 1000 });
+        const key = site.key;
         m.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
           // Clicking an existing site means "edit this one": leave placement mode.
           this.setPlaceMode(null);
-          this.store.select(bs.id);
+          const st = (this.markerSites.get(key) ?? []);
+          // Re-clicking the open site keeps its carrier; otherwise open its first one.
+          if (!st.some((b) => b.id === this.store.selectedStationId) && st[0]) this.store.select(st[0].id);
         });
         m.on('drag', () => {
           const p = m!.getLatLng();
-          const s = this.store.station(bs.id);
-          if (s) {
+          for (const s of this.markerSites.get(key) ?? []) {
             s.lat = p.lat;
             s.lng = p.lng;
-            this.renderSectors();
           }
+          this.renderSectors();
         });
-        m.on('dragend', () => this.onStationMoved(bs.id));
+        m.on('dragend', () => {
+          const st = this.markerSites.get(key) ?? [];
+          if (st[0]) this.onStationMoved(st[0].id);
+        });
         m.addTo(this.stationLayer);
-        this.markers.set(bs.id, m);
+        this.markers.set(site.key, m);
       } else {
-        m.setLatLng([bs.lat, bs.lng]);
+        m.setLatLng([site.lat, site.lng]);
         m.setIcon(icon);
       }
+      this.markerSites.set(site.key, site.stations);
       this.applyDraggable(m);
-      m.bindTooltip(`${bs.name} · ${op?.name ?? '?'} · ${bs.tech} ${bs.band}`, { direction: 'top', offset: [0, -10] });
+      const carriers = site.stations.map((b) => `${b.tech} ${b.band}`).join(', ');
+      m.bindTooltip(`${site.name} · ${op?.name ?? '?'} · ${site.stations.length > 1 ? `${site.stations.length} carriers: ` : ''}${carriers}`, { direction: 'top', offset: [0, -10] });
     }
-    for (const [id, m] of this.markers) {
-      if (!seen.has(id)) {
+    for (const [k, m] of this.markers) {
+      if (!seen.has(k)) {
         m.remove();
-        this.markers.delete(id);
+        this.markers.delete(k);
+        this.markerSites.delete(k);
       }
     }
     this.renderSectors();
   }
+  /** Stations behind each site marker (by site key). */
+  private markerSites = new Map<string, BaseStation[]>();
 
   /** Sector wedges, sized in screen space so they stay readable at any zoom. */
   renderSectors() {

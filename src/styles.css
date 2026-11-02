@@ -94,6 +94,8 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 .st-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: pointer; border-bottom: 1px solid var(--surface-2); }
 .st-item:hover { background: var(--surface-2); }
 .st-item.sel { background: #e3eefb; }
+.st-item.sub { padding-left: 26px; font-size: 12px; background: var(--surface-2); }
+.st-item.sub.sel { background: #d4e4f8; font-weight: 600; }
 .st-item.off { opacity: 0.5; }
 .st-item .nm { font-weight: 500; flex: 1; }
 .st-item .meta { color: var(--muted); font-size: 11px; }
@@ -175,6 +177,16 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 }
 .bs-icon.selected { outline: 3px solid #000; outline-offset: 1px; }
 .bs-icon.disabled { opacity: 0.45; filter: grayscale(0.7); }
+.bs-icon.site { width: auto; min-width: 22px; box-sizing: border-box; border-radius: 11px; padding: 0 5px; gap: 4px; }
+.bs-icon.site sup { font-size: 8px; font-weight: 600; margin-left: 1px; vertical-align: 3px; }
+.si-carriers { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
+.si-carriers .chip { font-size: 11px; padding: 2px 8px; }
+.si-carriers .chip.off { opacity: .5; text-decoration: line-through; }
+.site-az { display: flex; flex-wrap: wrap; gap: 6px; }
+.site-az label { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); }
+.site-az input { width: 52px; padding: 3px; font-size: 12px; }
+.site-name { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); white-space: nowrap; font-size: 11px; font-weight: 600; color: #1d1d1b;
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff; pointer-events: none; }
 .ap-icon {
   width: 20px; height: 20px; border-radius: 5px; background: var(--c); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.45);
   display: flex; align-items: center; justify-content: center; color: #fff; box-sizing: border-box;
