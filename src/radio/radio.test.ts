@@ -83,6 +83,7 @@ describe('carrier tables', () => {
   it('computes channel numbers', () => {
     expect(channelNumber('GSM', 947.4)).toEqual({ label: 'ARFCN', value: 62 });
     expect(channelNumber('LTE', 1815)).toEqual({ label: 'EARFCN', value: 1300 });
+    expect(channelNumber('LTE', presetByKey('lte2300').freqMHz)).toEqual({ label: 'EARFCN', value: 39150 }); // B40
     expect(channelNumber('NR', 3550)?.value).toBe(636667);
   });
 });
