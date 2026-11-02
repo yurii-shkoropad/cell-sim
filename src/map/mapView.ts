@@ -319,6 +319,7 @@ export class MapView {
       const html = `<div class="bs-icon site ${selected ? 'selected' : ''} ${off ? 'disabled' : ''}" style="--c:${color}">${badge}</div>`
         + (showNames ? `<div class="site-name">${escapeHtml(site.name)}</div>` : '');
       const icon = L.divIcon({ className: 'bs-divicon', html, iconSize: [w, 22], iconAnchor: [w / 2, 11] });
+      this.markerBox.set(site.key, { w, h: showNames ? 46 : 22 });
       let m = this.markers.get(site.key);
       if (!m) {
         m = L.marker([site.lat, site.lng], { icon, draggable: true, autoPan: true, zIndexOffset: 1000 });
@@ -365,6 +366,8 @@ export class MapView {
   }
   /** Stations behind each site marker (by site key). */
   private markerSites = new Map<string, BaseStation[]>();
+  /** Screen size of each site marker incl. its name (PCI labels keep clear of it), px. */
+  private markerBox = new Map<string, { w: number; h: number }>();
 
   /** Sector wedges, sized in screen space so they stay readable at any zoom. */
   renderSectors() {
@@ -414,7 +417,7 @@ export class MapView {
         L.polygon(pts, style).addTo(this.sectorLayer);
       }
     }
-    if (this.store.layers.showPci && zoom >= 15) this.renderPci(lenM, visible);
+    if (this.store.layers.showPci && zoom >= 16) this.renderPci(lenM, visible);
     const sel = this.store.station(this.store.selectedStationId);
     if (sel) this.renderFootprint(sel, cellColor);
   }
@@ -756,7 +759,7 @@ export class MapView {
    * the same way share one label ("382 · 5 · 304"), in carrier order.
    */
   private renderPci(lenM: number, visible: (bs: BaseStation) => boolean) {
-    const groups = new Map<string, { lat: number; lng: number; az: number; pcis: number[] }>();
+    const groups = new Map<string, { site: string; lat: number; lng: number; az: number; pcis: number[] }>();
     for (const bs of this.store.scenario.stations) {
       if (!bs.enabled || !visible(bs)) continue;
       for (const s of bs.sectors) {
@@ -764,20 +767,67 @@ export class MapView {
         const az = s.hBeamwidth >= 360 ? -1 : Math.round(s.azimuth);
         const k = `${siteKeyOf(bs)}|${az}`;
         let g = groups.get(k);
-        if (!g) groups.set(k, (g = { lat: bs.lat, lng: bs.lng, az, pcis: [] }));
+        if (!g) groups.set(k, (g = { site: siteKeyOf(bs), lat: bs.lat, lng: bs.lng, az, pcis: [] }));
         if (!g.pcis.includes(s.pci)) g.pcis.push(s.pci);
       }
     }
+    /** Labels placed so far, in layer px (a later label is pushed outwards until it is clear). */
+    const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    // Every site marker (badge + name) is an obstacle too, so labels also avoid neighbouring sites.
+    for (const [key, st] of this.markerSites) {
+      if (!st[0]) continue;
+      const q = this.map.latLngToLayerPoint([st[0].lat, st[0].lng]);
+      const b = this.siteBox(key);
+      placed.push({ x0: q.x - b.w / 2 - 2, y0: q.y - 13, x1: q.x + b.w / 2 + 2, y1: q.y + b.h - 9 });
+    }
     for (const g of groups.values()) {
-      const p = g.az < 0 ? { lat: g.lat, lng: g.lng } : destination(g.lat, g.lng, g.az, lenM * 1.3);
+      // In screen space: just past the wedge tip, but never on the site marker (badge + name),
+      // and anchored on the side facing away from the site.
+      const az = g.az < 0 ? 180 : g.az; // omni: below the marker
+      const sx = Math.sin((az * Math.PI) / 180);
+      const sy = -Math.cos((az * Math.PI) / 180); // screen y grows downwards
+      const c = this.map.latLngToLayerPoint([g.lat, g.lng]);
+      const tip = this.map.latLngToLayerPoint(destination(g.lat, g.lng, az, lenM));
+      const box = this.siteBox(g.site);
+      // Where the direction leaves the marker's rectangle (badge, with the name hanging below).
+      const hw = box.w / 2 + 4;
+      const hh = (sy > 0 ? box.h - 11 : 11) + 4;
+      const clear = Math.min(Math.abs(sx) > 1e-6 ? hw / Math.abs(sx) : Infinity, Math.abs(sy) > 1e-6 ? hh / Math.abs(sy) : Infinity);
       const text = g.pcis.join(' · ');
-      L.marker([p.lat, p.lng], {
+      // Label box (bold 10 px digits ≈ 6.2 px each, padding) around an anchor point.
+      const lw = text.length * 6.2 + 6;
+      const lh = 14;
+      const rect = (r: number) => {
+        const x = c.x + sx * r - lw * (0.5 - 0.5 * sx);
+        const y = c.y + sy * r - lh * (0.5 - 0.5 * sy);
+        return { x0: x, y0: y, x1: x + lw, y1: y + lh };
+      };
+      const hits = (q: { x0: number; y0: number; x1: number; y1: number }) => placed.some((o) => q.x0 < o.x1 && o.x0 < q.x1 && q.y0 < o.y1 && o.y0 < q.y1);
+      let r = Math.max(g.az < 0 ? 0 : c.distanceTo(tip) + 4, clear);
+      for (let k = 0; k < 12 && hits(rect(r)); k++) r += lh;
+      placed.push(rect(r));
+      const p = this.map.layerPointToLatLng([c.x + sx * r, c.y + sy * r]);
+      const tx = (-50 + 50 * sx).toFixed(0);
+      const ty = (-50 + 50 * sy).toFixed(0);
+      L.marker(p, {
         pane: 'sectorPane',
         interactive: false,
         keyboard: false,
-        icon: L.divIcon({ className: 'pci-divicon', html: `<span class="pci-label">${text}</span>`, iconSize: [0, 0] }),
+        icon: L.divIcon({ className: 'pci-divicon', html: `<span class="pci-label" style="transform:translate(${tx}%,${ty}%)">${text}</span>`, iconSize: [0, 0] }),
       }).addTo(this.sectorLayer);
     }
+  }
+
+  /** Rendered size of a site marker (badge width, height down to the bottom of its name), px. */
+  private siteBox(key: string): { w: number; h: number } {
+    const el = this.markers.get(key)?.getElement();
+    const badge = el?.querySelector<HTMLElement>('.bs-icon');
+    const name = el?.querySelector<HTMLElement>('.site-name');
+    if (badge && badge.offsetWidth) {
+      const w = Math.max(badge.offsetWidth, name?.offsetWidth ?? 0);
+      return { w, h: name ? name.offsetTop + name.offsetHeight : badge.offsetHeight };
+    }
+    return this.markerBox.get(key) ?? { w: 24, h: 22 }; // not laid out yet: the estimate
   }
 
   /** Preview of the outline being drawn (to the cursor). */

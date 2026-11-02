@@ -23,7 +23,7 @@ export interface LayerState {
   showSiteNames: boolean;
   /** What a site marker shows: its bands, or RATs with carrier counts. */
   siteBadge: SiteBadge;
-  /** PCI (BSIC for GSM) labels at the sector tips (from zoom 15). */
+  /** PCI (BSIC for GSM) labels at the sector tips (from zoom 16). */
   showPci: boolean;
   /** RSRP heatmap colours, and smooth gradient instead of flat classes (remembered per browser). */
   rsrpPalette: RsrpPalette;

@@ -256,7 +256,7 @@ export function layersPanel(app: App): HTMLElement {
           saveViewPrefs(l);
           app.mapView.renderStations();
         }, 'Name under each site marker'),
-        checkField('PCI labels (from zoom 15)', () => l.showPci, (v) => {
+        checkField('PCI labels (from zoom 16)', () => l.showPci, (v) => {
           l.showPci = v;
           saveViewPrefs(l);
           app.mapView.renderSectors();
