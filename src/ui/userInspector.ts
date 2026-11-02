@@ -10,6 +10,7 @@ import { isolateFromMap } from '../map/mapView';
 import type { App } from './app';
 import { button, clear, fmt, h, selectEl } from './dom';
 import { fmtTime } from './kpiPanel';
+import { bandShort } from '../state/sites';
 
 /**
  * Ideal-conditions ceiling for a UE on a cell: every RB, every layer the cell and
@@ -273,11 +274,12 @@ export class UserInspector {
     return h('div', null,
       h('h4', null, 'Carrier aggregation candidates'),
       h('table', { class: 'meas' },
-        h('tr', null, h('th', null, 'Cell'), h('th', null, 'MHz'), h('th', null, 'RSRP'), h('th', null, 'SINR'), h('th', null, 'Status')),
+        h('tr', null, h('th', null, 'Cell'), h('th', { title: 'Band · sector number' }, 'Band'), h('th', null, 'MHz'), h('th', null, 'RSRP'), h('th', null, 'SINR'), h('th', null, 'Status')),
         ...rows.map((r) => {
           const c = ctx.cells[r.cell];
           return h('tr', { class: r.used ? 'serving' : '' },
             h('td', null, h('span', { class: 'dot', style: `background:${c.color}` }), ' ', this.locateLink(c)),
+            h('td', { class: 'nowrap' }, this.bandSector(c)),
             h('td', null, String(c.freqMHz)),
             h('td', null, fmt(r.lvl, 0)),
             h('td', null, fmt(r.sinr, 1)),
@@ -397,13 +399,14 @@ export class UserInspector {
       this.caTable(u),
       h('h4', null, 'Measured cells'),
       h('table', { class: 'meas' },
-        h('tr', null, h('th', null, 'Cell'), h('th', null, 'RAT'), h('th', null, 'Level'), h('th', null, 'Δ serving')),
+        h('tr', null, h('th', null, 'Cell'), h('th', null, 'RAT'), h('th', { title: 'Band · sector number' }, 'Band'), h('th', null, 'Level'), h('th', null, 'Δ serving')),
         ...meas.map((m) => {
           const cell = ctx.cells[m.cell];
           const cls = m.cell === u.serving ? 'serving' : m.cell === u.hoCand ? 'cand' : '';
           return h('tr', { class: cls },
             h('td', null, h('span', { class: 'dot', style: `background:${cell.color}` }), ' ', this.locateLink(cell)),
             h('td', null, cell.tech),
+            h('td', { class: 'nowrap' }, this.bandSector(cell)),
             h('td', null, `${fmt(m.level)} dBm`),
             h('td', null, c && m.cell !== u.serving && cell.tech === c.tech ? `${m.level - servLvl >= 0 ? '+' : ''}${fmt(m.level - servLvl)} dB` : m.cell === u.serving ? 'serving' : ''),
           );
@@ -418,6 +421,14 @@ export class UserInspector {
         })(),
       ),
     );
+  }
+
+  /** "B3 · S2": the cell's band and its sector number on the station. */
+  private bandSector(c: CellRF): string {
+    const bs = this.app.store.station(c.bsId);
+    if (!bs) return '';
+    const si = bs.sectors.findIndex((s) => s.id === c.sectorId);
+    return `${bandShort(bs)} · S${si + 1}`;
   }
 
   /** Cell name that shows the cell on the map (mousedown: the panel re-renders every tick, which would swallow a click). */

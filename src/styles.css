@@ -392,3 +392,4 @@ table.cmp tr.live td:first-child { font-weight: 600; }
 .bulk-row .field input { width: 64px; }
 .bulk-row .btn { grid-area: b; padding: 3px 8px; }
 .bulk-now { grid-area: n; font-size: 11px; color: var(--muted); text-align: right; margin-top: -2px; }
+table.meas td.nowrap { white-space: nowrap; }
