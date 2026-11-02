@@ -392,5 +392,9 @@ export function usersPanel(app: App): HTMLElement {
   store.on('network', () => {
     if (root.offsetParent !== null) render(); // operator list may have changed
   });
+  store.on('model', () => {
+    Object.assign(tpl, templateFromSettings(store.scenario)); // settings reset
+    render();
+  });
   return root;
 }

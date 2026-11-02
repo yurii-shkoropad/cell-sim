@@ -119,6 +119,20 @@ describe('link budget', () => {
     expect(after.cells[2].refTxDbm).toBe(before.cells[2].refTxDbm);
   });
 
+  it('model calibration: offset everywhere, slope per decade beyond 100 m, only for the model in use', () => {
+    const scn = defaultScenario();
+    scn.stations = [makeStation(presetByKey('lte1800'), scn.center.lat, scn.center.lng, 'op1', 'T', { sectors: 1 })];
+    scn.settings.radio.shadowingEnabled = false;
+    const base = buildRadioContext(scn);
+    scn.settings.radio.calibration['cost231-hata'] = { offsetDb: 6, slopeDb: 5 };
+    scn.settings.radio.calibration['okumura-hata'] = { offsetDb: 20, slopeDb: 0 }; // not used at 1800 MHz
+    const cal = buildRadioContext(scn);
+    const drop = (x: number, y: number) => rxLevel(base, base.cells[0], x, y) - rxLevel(cal, cal.cells[0], x, y);
+    expect(drop(0, 50)).toBeCloseTo(6, 9);
+    expect(drop(0, 1000)).toBeCloseTo(11, 9);
+    expect(drop(0, 10000)).toBeCloseTo(16, 9);
+  });
+
   it('SINR of a lone cell equals SNR; a co-channel twin at equal level gives ~0 dB', () => {
     const scn = defaultScenario();
     const p = presetByKey('lte1800');

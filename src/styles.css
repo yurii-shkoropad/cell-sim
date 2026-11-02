@@ -380,3 +380,7 @@ table.cmp tr.live td:first-child { font-weight: 600; }
 /* KPI scope selector */
 .scope-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; }
 .scope-lbl { font-size: 11px; color: var(--muted); margin-right: 2px; }
+
+.cal-row { border-top: 1px solid var(--border, #e3e3e3); padding-top: 4px; margin-top: 4px; }
+.cal-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.cal-name .muted { font-weight: 400; color: var(--muted); }

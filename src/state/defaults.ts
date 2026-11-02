@@ -28,6 +28,7 @@ export function defaultSettings(): Settings {
       muMimoEfficiency: 0.5,
       scheduler: 'rr',
       pfDiversityEfficiency: 0.5,
+      calibration: { 'okumura-hata': { offsetDb: 0, slopeDb: 0 }, 'cost231-hata': { offsetDb: 0, slopeDb: 0 }, 'cost231-wi': { offsetDb: 0, slopeDb: 0 } },
     },
     users: {
       count: 150,

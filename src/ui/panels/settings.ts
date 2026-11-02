@@ -2,10 +2,11 @@ import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { BUILDING_LEGEND } from '../../map/mapView';
 import { RSRP_PALETTES } from '../../map/colors';
 import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES } from '../../state/store';
-import { TECHS, type CaSettings, type Tech, type TechThresholds } from '../../types';
+import { TECHS, type CalibratedModel, type CaSettings, type RadioSettings, type Tech, type TechThresholds } from '../../types';
+import { CAL_REF_M } from '../../radio/cells';
 import { ENV_RADIUS_M } from '../../radio/buildings';
 import type { App } from '../app';
-import { button, checkField, clear, h, numField, section, selectField } from '../dom';
+import { button, checkField, clear, h, numField, refreshFields, section, selectField, toast } from '../dom';
 
 export function radioPanel(app: App): HTMLElement {
   const { store } = app;
@@ -46,6 +47,7 @@ export function radioPanel(app: App): HTMLElement {
           set();
         }, { min: 5, max: 500, step: 5, unit: 'm' }),
       ),
+      calibrationSection(r, set),
       section('Receiver & interference',
         numField('UE noise figure', () => r.ueNoiseFigureDb, (v) => {
           r.ueNoiseFigureDb = v;
@@ -120,12 +122,60 @@ export function radioPanel(app: App): HTMLElement {
           set();
         }, { step: 1, title: 'Applied on reset' }),
       ),
+      section('Defaults',
+        h('p', { class: 'hint' }, 'Every setting (this tab, Layers, user generation, Wi-Fi offload) back to its default. The network, users and buildings stay.'),
+        h('div', { class: 'row' }, resetSettingsButton(app)),
+      ),
     );
   };
   render();
   store.on('scenario', render);
   store.on('model', render);
   return root;
+}
+
+/** "Reset all settings" button (Radio tab and Import/Export). */
+export function resetSettingsButton(app: App): HTMLElement {
+  return button('Reset all settings', () => {
+    if (!confirm('Reset every setting to its default? Radio and propagation (incl. calibration), mobility thresholds, simulation, user generation, Wi-Fi offload, carrier aggregation, and the map layers and colours. Stations, users, Wi-Fi APs and buildings are kept.')) return;
+    app.store.resetSettings();
+    refreshFields();
+    app.mapView.renderStations();
+    app.mapView.renderSectors();
+    toast('All settings reset to defaults.', 'ok');
+  }, 'danger');
+}
+
+const CAL_LABEL: Record<CalibratedModel, string> = { 'okumura-hata': 'Okumura-Hata', 'cost231-hata': 'COST-231 Hata', 'cost231-wi': 'COST-231 WI (building model)' };
+
+/** Offset / slope per path-loss model, to match the predictions to measured (drive-test) levels. */
+function calibrationSection(r: RadioSettings, set: () => void): HTMLElement {
+  // The models the current choice actually uses: Auto and the building model fall back to Hata.
+  const used: CalibratedModel[] =
+    r.model === 'okumura-hata' || r.model === 'cost231-hata' ? [r.model] : r.model === 'cost231-wi' ? ['cost231-wi', 'okumura-hata', 'cost231-hata'] : ['okumura-hata', 'cost231-hata'];
+  const rows = used.map((m) => {
+    const c = r.calibration[m];
+    return h('div', { class: 'cal-row' },
+      h('div', { class: 'cal-name' }, CAL_LABEL[m], m !== 'cost231-wi' && r.model === 'cost231-wi' ? h('span', { class: 'muted' }, ' · fallback') : '', m !== 'cost231-wi' && r.model === 'auto' ? h('span', { class: 'muted' }, m === 'okumura-hata' ? ' · ≤1500 MHz' : ' · >1500 MHz') : ''),
+      numField('Offset', () => c.offsetDb, (v) => {
+        c.offsetDb = v;
+        set();
+      }, { min: -30, max: 40, step: 0.5, unit: 'dB', title: 'Extra loss at every distance. +6 dB makes every predicted level 6 dB weaker.' }),
+      numField('Slope', () => c.slopeDb, (v) => {
+        c.slopeDb = v;
+        set();
+      }, { min: -20, max: 30, step: 0.5, unit: 'dB/dec', title: `Extra loss per decade of distance beyond ${CAL_REF_M} m: +5 dB/dec adds 5 dB at ${CAL_REF_M * 10} m and 10 dB at ${CAL_REF_M * 100} m.` }),
+    );
+  });
+  return section('Model calibration',
+    h('p', { class: 'hint' }, `Tune the model to your measurements: extra loss = offset + slope · log₁₀(d / ${CAL_REF_M} m) beyond ${CAL_REF_M} m, offset only closer. Positive values give weaker signal. Compare the RSRP heatmap with the measured levels and raise the offset until the mean error is about 0; if far points are still too strong, add slope.`),
+    ...rows,
+    h('div', { class: 'row' }, button('Reset calibration', () => {
+      for (const m of used) Object.assign(r.calibration[m], { offsetDb: 0, slopeDb: 0 });
+      set();
+      refreshFields();
+    })),
+  );
 }
 
 function thresholdTable(th: Record<Tech, TechThresholds>, changed: () => void): HTMLElement {

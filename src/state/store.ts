@@ -47,8 +47,24 @@ const VIEW_PREFS_KEY = 'radio-sim.rsrp-look';
 
 type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames'>;
 
+const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true });
+
+const defaultLayers = (): Omit<LayerState, keyof ViewPrefs> => ({
+  heatmap: 'rsrp',
+  opacity: 0.55,
+  resolutionPx: 4,
+  operatorFilter: 'op1',
+  techFilter: 'LTE',
+  showSectors: true,
+  showUsers: true,
+  showLinks: false,
+  showRoads: false,
+  showBuildings: false,
+  showWifi: true,
+});
+
 function loadViewPrefs(): ViewPrefs {
-  const d: ViewPrefs = { rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true };
+  const d = defaultViewPrefs();
   try {
     const v = JSON.parse(localStorage.getItem(VIEW_PREFS_KEY) ?? '{}') as Partial<LayerState>;
     return {
@@ -78,20 +94,7 @@ export function saveViewPrefs(l: LayerState) {
 export class Store {
   scenario: Scenario;
   selectedStationId: string | null = null;
-  layers: LayerState = {
-    heatmap: 'rsrp',
-    opacity: 0.55,
-    resolutionPx: 4,
-    operatorFilter: 'op1',
-    techFilter: 'LTE',
-    showSectors: true,
-    showUsers: true,
-    showLinks: false,
-    showRoads: false,
-    showBuildings: false,
-    showWifi: true,
-    ...loadViewPrefs(),
-  };
+  layers: LayerState = { ...defaultLayers(), ...loadViewPrefs() };
   private listeners = new Map<EventName, Set<Listener>>();
   private saveTimer = 0;
 
@@ -99,6 +102,21 @@ export class Store {
     this.scenario = loadSaved() ?? defaultScenario();
     // The default filter names the demo operator: a saved scenario without it would show nothing.
     if (!this.scenario.operators.some((o) => o.id === this.layers.operatorFilter)) this.layers.operatorFilter = 'all';
+  }
+
+  /**
+   * Every setting back to its default: radio, mobility thresholds, simulation, user generation,
+   * Wi-Fi, carrier aggregation, and the map layers / view preferences. Stations, users, Wi-Fi APs
+   * and buildings are kept.
+   */
+  resetSettings() {
+    this.scenario.settings = defaultSettings();
+    this.layers = { ...defaultLayers(), ...defaultViewPrefs() };
+    if (!this.scenario.operators.some((o) => o.id === this.layers.operatorFilter)) this.layers.operatorFilter = 'all';
+    saveViewPrefs(this.layers);
+    this.emit('settings');
+    this.emit('model');
+    this.emit('layers');
   }
 
   on(ev: EventName, fn: Listener): () => void {
@@ -216,7 +234,15 @@ export function mergeSettings(p: Partial<Settings> | undefined): Settings {
   const d = defaultSettings();
   const t = p?.thresholds;
   return {
-    radio: { ...d.radio, ...p?.radio },
+    radio: {
+      ...d.radio,
+      ...p?.radio,
+      calibration: {
+        'okumura-hata': { ...d.radio.calibration['okumura-hata'], ...p?.radio?.calibration?.['okumura-hata'] },
+        'cost231-hata': { ...d.radio.calibration['cost231-hata'], ...p?.radio?.calibration?.['cost231-hata'] },
+        'cost231-wi': { ...d.radio.calibration['cost231-wi'], ...p?.radio?.calibration?.['cost231-wi'] },
+      },
+    },
     users: { ...d.users, ...p?.users },
     sim: { ...d.sim, ...p?.sim },
     wifi: { ...d.wifi, ...p?.wifi },

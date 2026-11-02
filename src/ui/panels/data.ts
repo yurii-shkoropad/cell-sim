@@ -5,6 +5,7 @@ import { defaultScenario } from '../../state/defaults';
 import { clearSaved } from '../../state/store';
 import type { Scenario, Tech } from '../../types';
 import type { App } from '../app';
+import { resetSettingsButton } from './settings';
 import { button, clear, h, numField, section, selectField, textField, toast } from '../dom';
 
 const DEMOS: { key: string; label: string; hint: string; load(): Promise<Scenario> }[] = [
@@ -151,7 +152,8 @@ export function dataPanel(app: App): HTMLElement {
           toast('Scenario cleared.', 'ok');
         }, 'danger'),
       ),
-      h('p', { class: 'hint' }, '“Delete everything” empties the map for a new design: stations, users, Wi-Fi access points and planned buildings. OSM buildings and roads are map data and stay. The scenario is also saved automatically in this browser.'),
+      h('div', { class: 'row' }, resetSettingsButton(app)),
+      h('p', { class: 'hint' }, '“Delete everything” empties the map for a new design: stations, users, Wi-Fi access points and planned buildings. OSM buildings and roads are map data and stay. “Reset all settings” puts radio, simulation, user generation, Wi-Fi offload, CA and the map layers back to their defaults and keeps the network. The scenario is also saved automatically in this browser.'),
     ),
     section('OpenCelliD CSV',
       h('p', { class: 'hint' }, 'Cells inside the current map view are imported from an OpenCelliD export (radio,mcc,net,area,cell,unit,lon,lat,…). LTE cells are grouped into sites by eNB ID, NR by gNB ID, and GSM by proximity. Sector azimuths point towards each cell’s estimated position. Operators are matched by PLMN. UMTS/CDMA cells are skipped. Radio parameters come from the templates below.'),

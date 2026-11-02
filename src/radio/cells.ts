@@ -6,6 +6,9 @@ import { antennaAttenuation } from './antenna';
 import { antennaType, bestRank, validAntennaFor, type RankChoice } from './mimo';
 import { modulation, modulationForSe, validModulationFor, type Modulation, type ModulationKey } from './modulation';
 import { MIN_DISTANCE_KM, pathLossCoeffs } from './propagation';
+
+/** Calibration slopes pivot here: closer points get only the offset. */
+export const CAL_REF_M = 100;
 import { PathCond, pathSampleIndex, type StationPaths } from './buildingPaths';
 import { schedulerInfo, type SchedulerKey } from '../sim/scheduler';
 import { gsmTrafficChannels, occupiedBandwidthMHz, powerUnits, rbBandwidthHz, resourceBlocks } from './presets';
@@ -48,6 +51,12 @@ export interface CellRF {
   ftb: number;
   plA: number;
   plB: number;
+  /** Calibration of the Hata variant used for this cell (and the building model's Hata fallback): offset dB, slope dB/decade. */
+  calHataOff: number;
+  calHataSlope: number;
+  /** Calibration of the building model (COST-231 WI) where its path map covers the point. */
+  calWiOff: number;
+  calWiSlope: number;
   /** Free-space constant 32.45 + 20 log10(f): FSPL = fsConst + 20 log10(d_km). */
   fsConst: number;
   /** Building entry loss at this cell's frequency (ITU-R P.2109), added to Hata for indoor points, dB. */
@@ -185,6 +194,10 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
         ftb: s.frontToBack,
         plA: pl.A,
         plB: pl.B,
+        calHataOff: r.calibration?.[pl.model]?.offsetDb ?? 0,
+        calHataSlope: r.calibration?.[pl.model]?.slopeDb ?? 0,
+        calWiOff: r.calibration?.['cost231-wi']?.offsetDb ?? 0,
+        calWiSlope: r.calibration?.['cost231-wi']?.slopeDb ?? 0,
         fsConst: 32.45 + 20 * Math.log10(s.freqMHz),
         belDb: buildingEntryLossDb(s.freqMHz, r.buildingEntry),
         environment,
@@ -262,17 +275,19 @@ export function rxLevel(ctx: RadioContext, c: CellRF, x: number, y: number): num
   const elev = Math.atan2(c.hb - ctx.hm, Math.max(d, 1)) * DEG;
   const att = antennaAttenuation(brg - c.azimuth, elev, c.hbw, c.vbw, c.tilt, c.ftb);
   let pl = NaN;
+  // Calibration slope: dB per decade of distance beyond CAL_REF_M.
+  const lr = d > CAL_REF_M ? Math.log10(d / CAL_REF_M) : 0;
   if (c.pathMap >= 0 && ctx.paths) {
     // Building-aware path loss from the station's precomputed polar map.
     const k = pathSampleIndex(d, brg);
-    if (k >= 0) pl = ctx.paths.loss[c.pathMap][k];
+    if (k >= 0) pl = ctx.paths.loss[c.pathMap][k] + c.calWiOff + c.calWiSlope * lr;
   }
   if (pl !== pl) {
     // Inlined pathLoss() (hot loop): Hata median, floored at free space.
     const ld = Math.log10(Math.max(d / 1000, MIN_DISTANCE_KM));
     const hata = c.plA + c.plB * ld;
     const fs = c.fsConst + 20 * ld;
-    pl = hata > fs ? hata : fs;
+    pl = (hata > fs ? hata : fs) + c.calHataOff + c.calHataSlope * lr;
     // Hata is a street-level median: a UE inside an OSM footprint also pays the entry loss.
     if (ctx.indoor && isIndoor(ctx.indoor, x, y)) pl += c.belDb;
   }

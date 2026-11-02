@@ -35,6 +35,20 @@ export interface NumOpts {
   scale?: number;
 }
 
+/** Inputs that can re-read their value, for refreshFields(). */
+const refreshers = new Set<{ el: HTMLElement; read: () => void }>();
+function track(el: HTMLElement, read: () => void) {
+  refreshers.add({ el, read });
+}
+
+/** Re-read every field's value from its getter (after the settings changed underneath, e.g. a reset). */
+export function refreshFields() {
+  for (const r of refreshers) {
+    if (!r.el.isConnected) refreshers.delete(r);
+    else r.read();
+  }
+}
+
 export function numField(label: string, get: () => number, set: (v: number) => void, o: NumOpts = {}): HTMLElement {
   const scale = o.scale ?? 1;
   const input = h('input', {
@@ -55,6 +69,7 @@ export function numField(label: string, get: () => number, set: (v: number) => v
       set(v / scale);
     },
   });
+  track(input, () => (input.value = String(+(get() * scale).toFixed(6))));
   return h('label', { class: 'field', title: o.title }, h('span', { class: 'lbl' }, label), h('span', { class: 'ctl' }, input, o.unit ? h('span', { class: 'unit' }, o.unit) : null));
 }
 
@@ -76,11 +91,13 @@ export function selectField<T extends string>(label: string, options: [T, string
 export function selectEl<T extends string>(options: [T, string][], get: () => T, set: (v: T) => void): HTMLSelectElement {
   const sel = h('select', { onchange: () => set(sel.value as T) }, ...options.map(([v, l]) => h('option', { value: v }, l)));
   sel.value = get();
+  track(sel, () => (sel.value = get()));
   return sel;
 }
 
 export function checkField(label: string, get: () => boolean, set: (v: boolean) => void, title?: string): HTMLElement {
   const input = h('input', { type: 'checkbox', checked: get(), onchange: () => set(input.checked) });
+  track(input, () => (input.checked = get()));
   return h('label', { class: 'field check', title }, input, h('span', null, label));
 }
 
@@ -96,6 +113,10 @@ export function rangeField(label: string, min: number, max: number, step: number
       out.textContent = fmt(+input.value);
       set(+input.value);
     },
+  });
+  track(input, () => {
+    input.value = String(get());
+    out.textContent = fmt(get());
   });
   return h('label', { class: 'field' }, h('span', { class: 'lbl' }, label), h('span', { class: 'ctl' }, input, out));
 }

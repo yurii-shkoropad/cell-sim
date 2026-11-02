@@ -160,6 +160,16 @@ export interface UserSettings {
   dataMeanDemandMbps: number;
 }
 
+/** Drive-test tuning of one path-loss model: added on top of the model's loss. */
+export interface ModelCalibration {
+  /** Extra loss at every distance, dB (positive = weaker signal). */
+  offsetDb: number;
+  /** Extra loss per decade of distance beyond CAL_REF_M, dB/decade (positive = loss grows faster with distance). */
+  slopeDb: number;
+}
+
+export type CalibratedModel = 'okumura-hata' | 'cost231-hata' | 'cost231-wi';
+
 export interface RadioSettings {
   environment: EnvironmentSetting;
   model: PathLossModel;
@@ -191,6 +201,8 @@ export interface RadioSettings {
   scheduler: string;
   /** Fraction (in dB) of the ideal Rayleigh multi-user diversity gain realised by Proportional Fair. */
   pfDiversityEfficiency: number;
+  /** Per-model calibration against measurements. */
+  calibration: Record<CalibratedModel, ModelCalibration>;
 }
 
 export interface SimSettings {

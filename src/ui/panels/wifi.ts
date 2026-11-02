@@ -205,6 +205,7 @@ export function wifiPanel(app: App): HTMLElement {
     renderPolicyExtra();
     renderList();
   });
+  store.on('model', renderPolicyExtra); // settings reset
   app.onLiveTick(() => {
     if (root.offsetParent === null) return; // tab hidden
     renderSummary();
