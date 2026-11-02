@@ -226,7 +226,7 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 @keyframes hm-spin { to { transform: rotate(360deg); } }
 .readout {
   position: absolute; z-index: 1000; pointer-events: none; background: rgba(11,11,11,.82); color: #fff; font-size: 11px;
-  padding: 4px 7px; border-radius: 5px; white-space: nowrap; font-variant-numeric: tabular-nums;
+  padding: 4px 7px; border-radius: 5px; white-space: pre; line-height: 1.45; font-variant-numeric: tabular-nums;
 }
 .flash { animation: flash 0.8s ease-in-out 3; }
 @keyframes flash { 50% { stroke-opacity: 0.1; } }

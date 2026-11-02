@@ -425,18 +425,21 @@ export class HeatmapLayer {
     const cell = srv >= 0 ? this.ctx.cells[srv] : null;
     const rs = r.rsrp[k];
     const level = this.store.layers.techFilter === 'GSM' ? 'RxLev' : 'Level';
-    const parts = [`${level} ${rs > -Infinity ? rs.toFixed(1) + ' dBm' : '—'}`];
+    // Line 1: the radio at this point; line 2: the cell serving it and what it gives.
+    const line1 = [`${level} ${rs > -Infinity ? rs.toFixed(1) + ' dBm' : '—'}`];
+    const line2: string[] = [];
     if (cell) {
-      parts.push(`SINR ${r.sinr[k].toFixed(1)} dB`, `${cell.name} (${cell.tech}, PCI ${cell.pci})`);
-      if (r.cond[k]) parts.push(PATH_COND_LABEL[r.cond[k]]);
+      line1.push(`SINR ${r.sinr[k].toFixed(1)} dB`);
+      if (r.cond[k]) line1.push(PATH_COND_LABEL[r.cond[k]]);
+      line2.push(`${cell.name} (${cell.tech}, PCI ${cell.pci})`);
       if (cell.tech !== 'GSM') {
         // The map assumes a typical phone, not any particular user (see Users → Rx antennas).
         const us = this.store.scenario.settings.users;
         const m = r.mod[k] >= 0 ? MODULATIONS[r.mod[k]].label : '—';
-        parts.push(`${m} · peak ${r.thr[k].toFixed(1)} Mbps (${cell.tech === 'NR' ? us.ueRxNr : us.ueRxLte}Rx UE)`);
+        line2.push(`${m} · peak ${r.thr[k].toFixed(1)} Mbps (${cell.tech === 'NR' ? us.ueRxNr : us.ueRxLte}Rx UE)`);
       }
-    } else parts.push('no service');
-    this.readout.textContent = parts.join(' · ');
+    } else line1.push('no service');
+    this.readout.textContent = line1.join(' · ') + (line2.length ? '\n' + line2.join(' · ') : '');
     this.readout.style.display = '';
     this.readout.style.left = `${e.containerPoint.x + 14}px`;
     this.readout.style.top = `${e.containerPoint.y + 14}px`;
