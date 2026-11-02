@@ -178,6 +178,7 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 .bs-icon.selected { outline: 3px solid #000; outline-offset: 1px; }
 .bs-icon.disabled { opacity: 0.45; filter: grayscale(0.7); }
 .bs-icon.site { width: auto; min-width: 22px; box-sizing: border-box; border-radius: 11px; padding: 0 5px; gap: 4px; }
+.bs-icon.site.plain { width: 16px; height: 16px; min-width: 16px; padding: 0; border-radius: 50%; }
 .bs-icon.site sup { font-size: 8px; font-weight: 600; margin-left: 1px; vertical-align: 3px; }
 .si-carriers { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
 .si-carriers .chip { font-size: 11px; padding: 2px 8px; }

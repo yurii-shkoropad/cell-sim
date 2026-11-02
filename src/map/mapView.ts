@@ -304,10 +304,13 @@ export class MapView {
       const color = op?.color ?? '#555';
       const selected = site.stations.some((b) => b.id === this.store.selectedStationId);
       const off = site.stations.every((b) => !b.enabled);
-      // Badge: the site's bands ("B1 B3 B20"), or its RATs with carrier counts ("4G ×6").
-      let badge: string;
-      let w: number;
-      if (this.store.layers.siteBadge === 'bands') {
+      // Badge: the site's bands ("B1 B3 B20"), its RATs with carrier counts ("4G ×6"), or a plain dot.
+      const plain = this.store.layers.siteBadge === 'none';
+      let badge = '';
+      let w = 16;
+      if (plain) {
+        /* operator-coloured dot, no text */
+      } else if (this.store.layers.siteBadge === 'bands') {
         const bands = siteBands(site);
         badge = bands.map((b) => `<span>${escapeHtml(b)}</span>`).join('');
         w = 10 + bands.reduce((a, b) => a + 6 * b.length + 4, 0);
@@ -316,10 +319,11 @@ export class MapView {
         badge = rats.map(([t, n]) => `<span>${TECH_SHORT[t]}${n > 1 ? `<sup>×${n}</sup>` : ''}</span>`).join('');
         w = 10 + rats.reduce((a, [, n]) => a + (n > 1 ? 30 : 18), 0);
       }
-      const html = `<div class="bs-icon site ${selected ? 'selected' : ''} ${off ? 'disabled' : ''}" style="--c:${color}">${badge}</div>`
-        + (showNames ? `<div class="site-name">${escapeHtml(site.name)}</div>` : '');
-      const icon = L.divIcon({ className: 'bs-divicon', html, iconSize: [w, 22], iconAnchor: [w / 2, 11] });
-      this.markerBox.set(site.key, { w, h: showNames ? 46 : 22 });
+      const ih = plain ? 16 : 22;
+      const html = `<div class="bs-icon site ${plain ? 'plain' : ''} ${selected ? 'selected' : ''} ${off ? 'disabled' : ''}" style="--c:${color}">${badge}</div>`
+        + (showNames ? `<div class="site-name" style="top:${ih + 2}px">${escapeHtml(site.name)}</div>` : '');
+      const icon = L.divIcon({ className: 'bs-divicon', html, iconSize: [w, ih], iconAnchor: [w / 2, ih / 2] });
+      this.markerBox.set(site.key, { w, h: showNames ? ih + 24 : ih });
       let m = this.markers.get(site.key);
       if (!m) {
         m = L.marker([site.lat, site.lng], { icon, draggable: true, autoPan: true, zIndexOffset: 1000 });

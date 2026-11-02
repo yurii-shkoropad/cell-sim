@@ -34,8 +34,8 @@ export interface LayerState {
 
 /** 'operator': operator colour (open station in cell colours); 'cell': each cell its own colour; 'rgb': by sector number. */
 export type SectorPalette = 'operator' | 'cell' | 'rgb';
-export type SiteBadge = 'bands' | 'rat';
-export const SITE_BADGES: [SiteBadge, string][] = [['bands', 'Bands (e.g. B1 B3 B20)'], ['rat', 'Technology & carrier count (4G ×6)']];
+export type SiteBadge = 'bands' | 'rat' | 'none';
+export const SITE_BADGES: [SiteBadge, string][] = [['bands', 'Bands (e.g. B1 B3 B20)'], ['rat', 'Technology & carrier count (4G ×6)'], ['none', 'Nothing (plain marker)']];
 export const SECTOR_PALETTES: [SectorPalette, string][] = [['operator', 'Operator colour'], ['cell', 'Per cell (unique colours)'], ['rgb', 'By sector: S1 red, S2 blue, S3 green']];
 
 /** 'model': the path-loss model was switched from outside the Radio panel (it re-renders). */
@@ -55,7 +55,7 @@ function loadViewPrefs(): ViewPrefs {
       rsrpPalette: v.rsrpPalette === 'classic' ? 'classic' : d.rsrpPalette,
       rsrpSmooth: v.rsrpSmooth === true,
       sectorPalette: SECTOR_PALETTES.some(([k]) => k === v.sectorPalette) ? v.sectorPalette! : d.sectorPalette,
-      siteBadge: v.siteBadge === 'rat' ? 'rat' : d.siteBadge,
+      siteBadge: v.siteBadge === 'rat' || v.siteBadge === 'none' ? v.siteBadge : d.siteBadge,
       showPci: v.showPci === true,
       showSiteNames: v.showSiteNames !== false,
     };
