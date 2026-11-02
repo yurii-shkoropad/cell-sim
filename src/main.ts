@@ -124,6 +124,7 @@ const app: App = {
     syncBuildings();
   },
   respawnUsers: () => resetSim(),
+  loadAreaData: () => loadAreaData(),
   deleteAllUsers: () => app.deleteUsers((store.scenario.users ?? []).map((u) => u.id)),
   addUsers: (specs) => {
     (store.scenario.users ??= []).push(...specs);
@@ -495,7 +496,7 @@ requestAnimationFrame(frame);
 // anywhere else is fetched live from Overpass.
 const BUNDLED = { url: `${import.meta.env.BASE_URL}roads/lviv-polytechnic.json`, south: 49.8176, west: 23.9862, north: 49.8536, east: 24.0422 };
 const BUNDLED_BUILDINGS = `${import.meta.env.BASE_URL}buildings/lviv-polytechnic.json`;
-(async () => {
+async function loadAreaData() {
   const c = store.scenario.center;
   if (c.lat > BUNDLED.south && c.lat < BUNDLED.north && c.lng > BUNDLED.west && c.lng < BUNDLED.east) {
     try {
@@ -516,4 +517,5 @@ const BUNDLED_BUILDINGS = `${import.meta.env.BASE_URL}buildings/lviv-polytechnic
     }
   }
   loadRoads();
-})();
+}
+loadAreaData();

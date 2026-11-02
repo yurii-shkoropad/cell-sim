@@ -3,9 +3,28 @@ import { autoAssignGsm, autoAssignPci, checkPlan, type PlanIssue } from '../../p
 import { PRESETS, presetByKey } from '../../radio/presets';
 import { defaultScenario } from '../../state/defaults';
 import { clearSaved } from '../../state/store';
-import type { Tech } from '../../types';
+import type { Scenario, Tech } from '../../types';
 import type { App } from '../app';
 import { button, clear, h, numField, section, selectField, textField, toast } from '../dom';
+
+const DEMOS: { key: string; label: string; hint: string; load(): Promise<Scenario> }[] = [
+  {
+    key: 'polytechnic',
+    label: 'Lviv Polytechnic (default)',
+    hint: 'Three operators with GSM, LTE and NR sites, Wi-Fi access points and users around the Lviv Polytechnic campus.',
+    load: async () => defaultScenario(),
+  },
+  {
+    key: 'table4',
+    label: 'Kyivstar LTE – Table 4 (central Lviv)',
+    hint: '24 Kyivstar sites, 84 LTE carriers, 166 cells from the Table 4 engineering parameters (positions, azimuths, PCIs). The table has no bands, so carriers are assumed from the cell layer: 4x B3, 3x B1, 5x B7, 6x B8, 16x B20.',
+    load: async () => {
+      const r = await fetch(`${import.meta.env.BASE_URL}scenarios/kyivstar-lviv-table4.json`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return parseScenario(await r.text());
+    },
+  },
+];
 
 function bounds(app: App) {
   const b = app.mapView.map.getBounds();
@@ -25,7 +44,9 @@ export function dataPanel(app: App): HTMLElement {
   const { store } = app;
   const root = h('div', { class: 'panel' });
   const presetsFor = (t: Tech) => PRESETS.filter((p) => p.tech === t).map((p) => [p.key, p.label] as [string, string]);
-  const opt = { gsm: 'gsm900', lte: 'lte1800', nr: 'nr3500', osm: 'lte1800', osmOp: store.scenario.operators[0]?.id ?? '' };
+  const opt = { demo: 'table4', gsm: 'gsm900', lte: 'lte1800', nr: 'nr3500', osm: 'lte1800', osmOp: store.scenario.operators[0]?.id ?? '' };
+
+  const demoHint = h('p', { class: 'hint' }, DEMOS.find((d) => d.key === opt.demo)!.hint);
 
   const csvInput = h('input', { type: 'file', accept: '.csv,.txt,text/csv', onchange: async () => {
     const f = csvInput.files?.[0];
@@ -79,15 +100,34 @@ export function dataPanel(app: App): HTMLElement {
         }, 'primary'),
         h('label', { class: 'btn file' }, 'Import JSON…', jsonInput),
       ),
+    ),
+    section('Demo scenarios',
+      selectField('Demo', DEMOS.map((d) => [d.key, d.label] as [string, string]), () => opt.demo, (v) => {
+        opt.demo = v;
+        demoHint.textContent = DEMOS.find((d) => d.key === v)!.hint;
+      }),
+      demoHint,
       h('div', { class: 'row' },
-        button('Reset to demo scenario', () => {
-          if (!confirm('Replace the current scenario with the Lviv Polytechnic demo?')) return;
-          clearSaved();
-          store.replaceScenario(defaultScenario());
-          const c = store.scenario.center;
-          app.mapView.map.setView([c.lat, c.lng], c.zoom);
-          app.respawnUsers();
-        }, 'danger'),
+        button('Load demo', async () => {
+          const d = DEMOS.find((x) => x.key === opt.demo)!;
+          if (!confirm(`Replace the current scenario with the demo “${d.label}”? Export it first if you want to keep it.`)) return;
+          try {
+            const scn = await d.load();
+            clearSaved();
+            store.replaceScenario(scn);
+            const c = store.scenario.center;
+            app.mapView.map.setView([c.lat, c.lng], c.zoom);
+            app.respawnUsers();
+            void app.loadAreaData();
+            toast(`Loaded demo “${store.scenario.name}”`, 'ok');
+          } catch (e) {
+            toast(`Could not load the demo: ${(e as Error).message}`, 'error');
+          }
+        }, 'primary'),
+      ),
+    ),
+    section('Clear',
+      h('div', { class: 'row' },
         button('Clear all stations', () => {
           if (!confirm('Remove all stations?')) return;
           store.scenario.stations = [];

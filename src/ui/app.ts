@@ -18,6 +18,8 @@ export interface App {
   loadRoads(): Promise<void>;
   buildings(): BuildingModel;
   loadBuildings(): Promise<void>;
+  /** Roads and buildings for the scenario's area: the bundled extract when it covers it, else Overpass. */
+  loadAreaData(): Promise<void>;
   /** After adding / editing / removing planned buildings: re-merge them and recompute propagation. */
   plannedBuildingsChanged(): void;
   respawnUsers(): void;
