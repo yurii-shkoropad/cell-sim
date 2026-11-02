@@ -7,6 +7,8 @@ import { SCHEDULERS, schedulerInfo } from '../sim/scheduler';
 import type { BaseStation, Sector, Tech } from '../types';
 import type { App } from './app';
 import { beamProfile, fmtDist } from './beamProfile';
+import { buildingsAtMast, heightInfo } from './heightInfo';
+import { siteOfStation } from '../state/sites';
 import { button, checkField, clear, fmt, h, numField, selectEl, selectField, textField } from './dom';
 
 const BW_OPTIONS: Record<Tech, number[]> = {
@@ -79,6 +81,19 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
   };
   renderDerived();
 
+  // Building under the mast and roofs around it; on a multi-carrier site this sits in the Site block instead.
+  const heightHost = h('div');
+  const renderHeight = () => {
+    clear(heightHost);
+    if ((siteOfStation(store.scenario.stations, bs.id)?.stations.length ?? 1) > 1) return;
+    heightHost.append(heightInfo(app, [bs], () => {
+      ch();
+      renderHeightField();
+    }));
+  };
+  let renderHeightField = () => {};
+  renderHeight();
+
   const profileHost = h('div', { class: 'beam-profile' });
   const renderProfile = () => {
     clear(profileHost);
@@ -96,7 +111,7 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
           } }, `S${i + 1}`),
         ),
       ),
-      beamProfile(bs, state.profileSector, hm, color(s.id)),
+      beamProfile(bs, state.profileSector, hm, color(s.id), buildingsAtMast(app, bs)),
       h('div', { class: 'hint' },
         Number.isFinite(fp.peak)
           ? `Boresight lands at ${fmtDist(fp.peak)}; −3 dB footprint ${fmtDist(fp.near)} – ${Number.isFinite(fp.far) ? fmtDist(fp.far) : 'horizon (upper edge never descends: overshoot risk)'}.`
@@ -108,6 +123,7 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
   const ch = () => {
     changed();
     renderDerived();
+    renderHeight();
     renderProfile();
     setTimeout(renderProfile, 120);
   };
@@ -185,10 +201,18 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
       bs.txPowerDbm = v;
       structural(); // sector rows show it as their default
     }, { min: -10, max: 70, step: 0.5, unit: 'dBm', title: 'Per sector, at the radio output (before feeder loss). Sectors can override it (Tx column in the sector table).' }),
-    numField('Antenna height', () => bs.heightM, (v) => {
-      bs.heightM = v;
-      ch();
-    }, { min: 1, max: 300, unit: 'm' }),
+    (() => {
+      const f = numField('Antenna height', () => bs.heightM, (v) => {
+        bs.heightM = v;
+        ch();
+      }, { min: 1, max: 300, unit: 'm', title: 'Above ground: on a rooftop site, the building plus the mast' });
+      renderHeightField = () => {
+        const input = f.querySelector('input')!;
+        input.value = String(bs.heightM);
+      };
+      return f;
+    })(),
+    heightHost,
     numField('Feeder/cable loss', () => bs.cableLossDb, (v) => {
       bs.cableLossDb = v;
       ch();

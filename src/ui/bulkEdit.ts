@@ -1,6 +1,7 @@
 import type { BaseStation, Sector } from '../types';
 import type { App } from './app';
 import { button, h, numField, selectEl, toast } from './dom';
+import { buildingsAtMast } from './heightInfo';
 
 type Mode = 'set' | 'add';
 
@@ -74,8 +75,23 @@ export interface BulkState {
 
 export function bulkEditor(app: App, targets: () => BaseStation[], state: BulkState, rerender: () => void): HTMLElement {
   const list = targets();
+  // With buildings loaded: antenna height measured from the roof of the building under the mast (ground masts: from the ground).
+  const params = [...PARAMS];
+  if (app.buildings().set) {
+    const roofs = new Map<string, number>();
+    const roof = (bs: BaseStation) => {
+      if (!roofs.has(bs.id)) roofs.set(bs.id, buildingsAtMast(app, bs)?.roofM ?? 0);
+      return roofs.get(bs.id)!;
+    };
+    params.splice(2, 0, {
+      key: 'roof', label: 'Height above roof', unit: 'm', min: 1, max: 300, step: 1,
+      title: 'Set: antenna height = roof of the building under the mast + this (ground masts: above ground). Change by: same as antenna height.',
+      get: (bs) => bs.heightM - roof(bs),
+      apply: (bs, mode, v, clamp) => (bs.heightM = clamp(mode === 'set' ? roof(bs) + v : bs.heightM + v)),
+    });
+  }
   const enabledOnly = (b: BaseStation) => b.enabled;
-  const rows = PARAMS.map((p) => {
+  const rows = params.map((p) => {
     state.values[p.key] ??= state.mode === 'set' && list[0] ? +p.get(list[0]).toFixed(1) : 0;
     const field = numField(p.label, () => state.values[p.key], (v) => (state.values[p.key] = v), { step: p.step, unit: state.mode === 'set' ? p.unit : `± ${p.unit}`, title: p.title });
     const apply = button('Apply', () => {

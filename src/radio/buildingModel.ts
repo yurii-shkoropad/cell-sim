@@ -9,6 +9,14 @@ import type { IndoorMask, PathProvider, RadioContext } from './cells';
  * A station's map is recomputed only when something it depends on changes
  * (position, height, frequency, UE height, entry-loss type, raster).
  */
+export interface SiteBuildings {
+  /** Roof of the building the mast stands on, m above ground; null = mast on the ground. */
+  roofM: number | null;
+  /** Tallest other roof within radiusM, m (0 = none). */
+  nearMaxM: number;
+  radiusM: number;
+}
+
 export class BuildingModel {
   set: BuildingSet | null = null;
   source = '';
@@ -58,6 +66,30 @@ export class BuildingModel {
     };
   }
   private envCache = new Map<string, EnvironmentEstimate | null>();
+
+  /**
+   * Buildings at a mast: the roof height of the building it stands on (null: on the ground),
+   * and the tallest other roof within `radiusM`. Null without building data or outside it.
+   */
+  siteBuildings(scn: Scenario, lat: number, lng: number, radiusM = 100): SiteBuildings | null {
+    if (!this.set) return null;
+    const r = this.ensureRaster(scn);
+    const { x, y } = new LocalProjection(scn.center.lat, scn.center.lng).toXY(lat, lng);
+    const ci = Math.floor((x - r.x0) / r.res);
+    const cj = Math.floor((y - r.y0) / r.res);
+    if (ci < 0 || cj < 0 || ci >= r.nx || cj >= r.ny) return null;
+    const own = r.id[cj * r.nx + ci];
+    const n = Math.ceil(radiusM / r.res);
+    let near = 0;
+    for (let j = Math.max(0, cj - n); j <= Math.min(r.ny - 1, cj + n); j++) {
+      for (let i = Math.max(0, ci - n); i <= Math.min(r.nx - 1, ci + n); i++) {
+        const k = j * r.nx + i;
+        if (!r.id[k] || r.id[k] === own || (i - ci) ** 2 + (j - cj) ** 2 > n * n) continue;
+        if (r.h[k] > near) near = r.h[k];
+      }
+    }
+    return { roofM: own ? r.h[cj * r.nx + ci] : null, nearMaxM: near, radiusM };
+  }
 
   /** Building footprints for indoor loss on Hata paths (any model), or null without buildings. */
   indoorMask(scn: Scenario): IndoorMask | null {

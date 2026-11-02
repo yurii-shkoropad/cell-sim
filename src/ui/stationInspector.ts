@@ -12,6 +12,7 @@ import { button, clear, fmt, h, numField, textField } from './dom';
 import { fmtTime } from './kpiPanel';
 import { renderStationConfig } from './stationConfig';
 import { carrierLabel, siteOfStation, type Site } from '../state/sites';
+import { heightInfo } from './heightInfo';
 
 type Tab = 'overview' | 'config';
 const MAX_USER_ROWS = 60;
@@ -128,7 +129,14 @@ export class StationInspector {
         }),
         num('Latitude', () => site.lat, (v) => all.forEach((b) => (b.lat = v)), { step: 0.0001 }),
         num('Longitude', () => site.lng, (v) => all.forEach((b) => (b.lng = v)), { step: 0.0001 }),
-        num('Antenna height (all)', () => bs.heightM, (v) => all.forEach((b) => (b.heightM = v)), { step: 1, unit: 'm', title: 'Sets the height of every carrier on the site' }),
+        num('Antenna height (all)', () => bs.heightM, (v) => {
+          all.forEach((b) => (b.heightM = v));
+          setTimeout(() => this.renderConfig(bs)); // building / roof notes and the side view
+        }, { step: 1, unit: 'm', title: 'Above ground, for every carrier on the site: on a rooftop site, the building plus the mast' }),
+        heightInfo(this.app, all, () => {
+          this.app.store.emit('network');
+          this.renderConfig(bs);
+        }),
         h('div', { class: 'field' }, h('span', { class: 'lbl' }, 'Sector directions (all carriers)'), az),
         h('p', { class: 'hint' }, 'These apply to every carrier on the site. Below: the carrier selected in the header (its band, power, tilt, PCI…).'),
         h('h4', null, `Carrier · ${carrierLabel(bs, site.name)} · ${bs.tech} ${bs.band}`),

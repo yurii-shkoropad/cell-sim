@@ -1,4 +1,5 @@
 import { verticalFootprint } from '../radio/antenna';
+import type { SiteBuildings } from '../radio/buildingModel';
 import type { BaseStation } from '../types';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -21,7 +22,7 @@ export const fmtDist = (m: number) => (!Number.isFinite(m) ? '∞' : m >= 1000 ?
  * exaggerated (heights are tens of metres, distances are hundreds), but the
  * ground intersection distances are exact.
  */
-export function beamProfile(bs: BaseStation, sectorIdx: number, hm: number, color: string): SVGSVGElement {
+export function beamProfile(bs: BaseStation, sectorIdx: number, hm: number, color: string, bld: SiteBuildings | null = null): SVGSVGElement {
   const s = bs.sectors[sectorIdx];
   const fp = verticalFootprint(bs.heightM, hm, s.tilt, s.vBeamwidth);
   const hb = bs.heightM;
@@ -29,7 +30,7 @@ export function beamProfile(bs: BaseStation, sectorIdx: number, hm: number, colo
   // Horizontal range: show the whole footprint, or 3× the boresight distance when the upper edge never lands.
   const reach = Number.isFinite(fp.far) ? fp.far * 1.15 : Number.isFinite(fp.peak) ? fp.peak * 3 : 2000;
   const xMax = Math.min(Math.max(reach, 300), 8000);
-  const yMax = hb * 1.35;
+  const yMax = Math.max(hb, bld?.roofM ?? 0, bld?.nearMaxM ?? 0) * 1.35;
   const px = (x: number) => M.l + (Math.min(x, xMax) / xMax) * (W - M.l - M.r);
   const py = (y: number) => H - M.b - (Math.max(Math.min(y, yMax), 0) / yMax) * (H - M.t - M.b);
   /** Height of a ray leaving the antenna at `deg` below horizon, at ground distance x. */
@@ -65,9 +66,25 @@ export function beamProfile(bs: BaseStation, sectorIdx: number, hm: number, colo
     root.append(svg('line', { x1: ant[0], y1: ant[1], x2: end[0], y2: end[1], stroke: color, 'stroke-width': dash ? 1.5 : 2, 'stroke-dasharray': dash }));
   }
 
+  // Building under the mast, and the tallest roof nearby (a dashed line along the chart).
+  if (bld && bld.nearMaxM > 0) {
+    const y = py(bld.nearMaxM);
+    root.append(
+      svg('line', { x1: M.l, y1: y, x2: W - M.r, y2: y, class: 'bp-roof-near' }),
+      svg('text', { x: W - M.r, y: y - 3, 'text-anchor': 'end', class: 'bp-note' }, `tallest roof within ${bld.radiusM} m: ${Math.round(bld.nearMaxM)} m`),
+    );
+  }
+  if (bld?.roofM) {
+    const top = py(bld.roofM);
+    root.append(
+      svg('rect', { x: px(0) - 14, y: top, width: 28, height: py(0) - top, class: 'bp-building' }),
+      svg('text', { x: px(0) + 17, y: Math.min(top + 10, py(0) - 2), class: 'bp-note' }, `building ${Math.round(bld.roofM)} m`),
+    );
+  }
+
   // Mast + antenna
   root.append(
-    svg('line', { x1: px(0), y1: py(0), x2: px(0), y2: py(hb), class: 'bp-mast' }),
+    svg('line', { x1: px(0), y1: py(bld?.roofM ? Math.min(bld.roofM, hb) : 0), x2: px(0), y2: py(hb), class: 'bp-mast' }),
     svg('circle', { cx: ant[0], cy: ant[1], r: 3.5, fill: color, stroke: '#fff', 'stroke-width': 1.5 }),
     svg('text', { x: M.l - 4, y: py(hb) + 3, 'text-anchor': 'end', class: 'bp-note' }, `${hb} m`),
   );
