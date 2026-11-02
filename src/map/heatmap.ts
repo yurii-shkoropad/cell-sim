@@ -35,6 +35,11 @@ export class HeatmapLayer {
   ) {
     this.worker = new Worker(new URL('./heatmap.worker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e: MessageEvent<HeatmapResult>) => this.onResult(e.data);
+    this.worker.onerror = () => {
+      // Never stay "busy" forever: a failed job must not block every later one.
+      this.busy = false;
+      this.onStatus(false, this.lastMs);
+    };
 
     this.legendEl = L.DomUtil.create('div', 'legend');
     isolateFromMap(this.legendEl);
@@ -72,15 +77,29 @@ export class HeatmapLayer {
     else this.schedule(0);
   }
 
-  private compute() {
+  /**
+   * Start a job for the current view. Progressive: a coarse pass (4× the cell size, ~16× fewer
+   * points) covers the whole view quickly, then the full-resolution pass replaces it. Only one
+   * job runs at a time; moves during a job just mark the map dirty, and the latest view is
+   * computed when it finishes (no backlog of jobs for views already left).
+   */
+  private compute(stage: 'coarse' | 'fine' = 'coarse') {
     const lay = this.store.layers;
     if (lay.heatmap === 'none' || !this.ctx) {
       this.redraw();
       return;
     }
+    if (this.busy) {
+      this.dirty = true;
+      return;
+    }
+    this.dirty = false;
     const size = this.map.getSize();
     if (size.x < 2 || size.y < 2) return;
-    const res = Math.max(2, lay.resolutionPx);
+    const fineRes = Math.max(2, lay.resolutionPx);
+    const coarseRes = Math.max(fineRes * 4, 12);
+    if (stage === 'coarse' && coarseRes >= 16 && fineRes >= 16) stage = 'fine';
+    const res = stage === 'coarse' ? coarseRes : fineRes;
     const x0 = -size.x * PAD;
     const y0 = -size.y * PAD;
     const cols = Math.ceil((size.x * (1 + 2 * PAD)) / res);
@@ -116,6 +135,7 @@ export class HeatmapLayer {
       ueRx: { GSM: 1, LTE: scn.settings.users.ueRxLte, NR: scn.settings.users.ueRxNr },
     };
     this.pending = {
+      stage,
       lats,
       lngs,
       bounds: L.latLngBounds(this.map.containerPointToLatLng([x0, y0]), this.map.containerPointToLatLng([x0 + cols * res, y0 + rows * res])),
@@ -125,7 +145,9 @@ export class HeatmapLayer {
     this.worker.postMessage(req);
   }
 
-  private pending: { lats: Float64Array; lngs: Float64Array; bounds: L.LatLngBounds } | null = null;
+  private pending: { stage: 'coarse' | 'fine'; lats: Float64Array; lngs: Float64Array; bounds: L.LatLngBounds } | null = null;
+  /** The view changed while a job was running: compute it when the job is done. */
+  private dirty = false;
   private sentPathsVersion = -1;
   private sentIndoorVersion = -1;
   private bounds: L.LatLngBounds | null = null;
@@ -136,9 +158,14 @@ export class HeatmapLayer {
     this.resultGrid = { lats: this.pending.lats, lngs: this.pending.lngs };
     this.bounds = this.pending.bounds;
     this.busy = false;
-    this.lastMs = r.ms;
-    this.onStatus(false, r.ms);
+    const coarse = this.pending.stage === 'coarse';
     this.paint();
+    if (this.dirty) this.compute('coarse'); // the view moved meanwhile: start over for it
+    else if (coarse) this.compute('fine');
+    else {
+      this.lastMs = r.ms;
+      this.onStatus(false, r.ms);
+    }
   }
 
   scale(kind: HeatmapKind = this.store.layers.heatmap): Scale | null {
