@@ -143,4 +143,28 @@ export function toast(msg: string, kind: 'info' | 'error' | 'ok' = 'info') {
   toastTimer = window.setTimeout(() => (el!.className = ''), kind === 'error' ? 6000 : 3500);
 }
 
+/**
+ * A button that needs two clicks: the first turns it red with `armedLabel` for a few seconds,
+ * the second runs `action` (no browser dialog, which some embedded browsers never show).
+ */
+export function confirmButton(label: string, armedLabel: string, action: () => void, cls = '', title?: string): HTMLButtonElement {
+  let timer = 0;
+  const b = button(label, () => {
+    if (!b.classList.contains('armed')) {
+      b.classList.add('armed');
+      b.textContent = armedLabel;
+      timer = window.setTimeout(disarm, 4000);
+      return;
+    }
+    disarm();
+    action();
+  }, cls, title);
+  const disarm = () => {
+    clearTimeout(timer);
+    b.classList.remove('armed');
+    b.textContent = label;
+  };
+  return b;
+}
+
 export const fmt = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : '—');

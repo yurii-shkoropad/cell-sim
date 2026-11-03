@@ -152,6 +152,14 @@ export class Store {
     this.emit('layers');
   }
 
+  /** Layers / view options from a snapshot (fields it lacks keep their defaults). */
+  applyLayers(l: Partial<LayerState>) {
+    this.layers = { ...defaultLayers(), ...defaultViewPrefs(), ...l };
+    if (!this.scenario.operators.some((o) => o.id === this.layers.operatorFilter)) this.layers.operatorFilter = 'all';
+    saveViewPrefs(this.layers);
+    this.emit('layers');
+  }
+
   on(ev: EventName, fn: Listener): () => void {
     let set = this.listeners.get(ev);
     if (!set) this.listeners.set(ev, (set = new Set()));

@@ -54,7 +54,7 @@ export function dataPanel(app: App): HTMLElement {
     demoArmed = false;
     clearTimeout(demoTimer);
     demoBtn.textContent = 'Load demo';
-    demoBtn.classList.remove('danger');
+    demoBtn.classList.remove('armed');
   };
   const demoHint = h('p', { class: 'hint' }, DEMOS.find((d) => d.key === opt.demo)!.hint);
 
@@ -125,7 +125,7 @@ export function dataPanel(app: App): HTMLElement {
           if (!demoArmed) {
             demoArmed = true;
             demoBtn.textContent = 'Click again to replace the current scenario';
-            demoBtn.classList.add('danger');
+            demoBtn.classList.add('armed');
             clearTimeout(demoTimer);
             demoTimer = window.setTimeout(disarm, 5000);
             return;

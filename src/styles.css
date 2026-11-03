@@ -83,6 +83,8 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 .btn.primary:hover { filter: brightness(1.06); }
 .btn.primary.active { background: #184f95; border-color: #184f95; }
 .btn.danger { color: var(--danger); }
+/* Second click needed ("Click again to …"): filled red, white text. */
+.btn.armed, .btn.primary.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn.ghost { border-color: transparent; color: var(--text-2); }
 .btn.icon { padding: 2px 7px; line-height: 1.2; }
 .btn.file { position: relative; overflow: hidden; display: inline-block; }
@@ -411,3 +413,9 @@ table.meas td.nowrap { white-space: nowrap; }
 .slot-pop .slot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; background: var(--c); box-shadow: 0 0 0 1px rgba(0,0,0,.2); cursor: pointer; padding: 0; }
 .slot-pop .slot.on { box-shadow: 0 0 0 2px #1d1d1b; }
 .si-carriers .si-move { padding: 0 6px; min-width: 0; font-size: 13px; line-height: 1.4; }
+
+.snap-row { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; margin: 6px 0; }
+.snap-row > input[type=text] { width: 100%; box-sizing: border-box; font-weight: 600; border-color: transparent; background: transparent; padding: 2px 4px; }
+.snap-row > input[type=text]:hover, .snap-row > input[type=text]:focus { border-color: var(--border); background: #fff; }
+.snap-meta { font-size: 11px; color: var(--muted); margin: 2px 4px 4px; }
+.snap-row .row { margin-top: 2px; }
