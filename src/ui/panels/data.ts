@@ -1,32 +1,11 @@
-import { exportScenario, importOpenCellId, importOsmTowers, parseScenario, type ImportResult } from '../../io/importers';
+import { importOpenCellId, importOsmTowers, type ImportResult } from '../../io/importers';
 import { autoAssignGsm, autoAssignPci, checkPlan, type PlanIssue } from '../../planning/check';
 import { PRESETS, presetByKey } from '../../radio/presets';
-import { defaultScenario } from '../../state/defaults';
-import { clearSaved } from '../../state/store';
-import type { Scenario, Tech } from '../../types';
+import type { Tech } from '../../types';
 import type { App } from '../app';
 import { resetSettingsButton } from './settings';
 import { snapshotsSections } from './snapshots';
-import { button, clear, refreshFields, h, numField, section, selectField, textField, toast } from '../dom';
-
-const DEMOS: { key: string; label: string; hint: string; load(): Promise<Scenario> }[] = [
-  {
-    key: 'polytechnic',
-    label: 'Lviv Polytechnic (default)',
-    hint: 'Three operators with GSM, LTE and NR sites, Wi-Fi access points and users around the Lviv Polytechnic campus.',
-    load: async () => defaultScenario(),
-  },
-  {
-    key: 'table4',
-    label: 'Kyivstar LTE – Table 4 (central Lviv)',
-    hint: '24 Kyivstar sites, 84 LTE carriers, 166 cells from the Table 4 engineering parameters (positions, azimuths, PCIs). The table has no bands, so carriers are assumed from the cell layer: 4x B3, 3x B1, 5x B7, 6x B8, 16x B20.',
-    load: async () => {
-      const r = await fetch(`${import.meta.env.BASE_URL}scenarios/kyivstar-lviv-table4.json`);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return parseScenario(await r.text());
-    },
-  },
-];
+import { button, clear, h, numField, section, selectField, toast, confirmButton } from '../dom';
 
 function bounds(app: App) {
   const b = app.mapView.map.getBounds();
@@ -46,18 +25,7 @@ export function dataPanel(app: App): HTMLElement {
   const { store } = app;
   const root = h('div', { class: 'panel' });
   const presetsFor = (t: Tech) => PRESETS.filter((p) => p.tech === t).map((p) => [p.key, p.label] as [string, string]);
-  const opt = { demo: 'table4', gsm: 'gsm900', lte: 'lte1800', nr: 'nr3500', osm: 'lte1800', osmOp: store.scenario.operators[0]?.id ?? '' };
-
-  let demoArmed = false;
-  let demoTimer = 0;
-  let demoBtn: HTMLButtonElement;
-  const disarm = () => {
-    demoArmed = false;
-    clearTimeout(demoTimer);
-    demoBtn.textContent = 'Load demo';
-    demoBtn.classList.remove('armed');
-  };
-  const demoHint = h('p', { class: 'hint' }, DEMOS.find((d) => d.key === opt.demo)!.hint);
+  const opt = { gsm: 'gsm900', lte: 'lte1800', nr: 'nr3500', osm: 'lte1800', osmOp: store.scenario.operators[0]?.id ?? '' };
 
   const csvInput = h('input', { type: 'file', accept: '.csv,.txt,text/csv', onchange: async () => {
     const f = csvInput.files?.[0];
@@ -86,84 +54,21 @@ export function dataPanel(app: App): HTMLElement {
     }
   });
 
-  const jsonInput = h('input', { type: 'file', accept: '.json,application/json', onchange: async () => {
-    const f = jsonInput.files?.[0];
-    if (!f) return;
-    try {
-      store.replaceScenario(parseScenario(await f.text()));
-      const c = store.scenario.center;
-      app.mapView.map.setView([c.lat, c.lng], c.zoom);
-      app.respawnUsers();
-      refreshFields();
-      toast(`Loaded scenario “${store.scenario.name}”`, 'ok');
-    } catch (e) {
-      toast(`Could not load scenario: ${(e as Error).message}`, 'error');
-    }
-    jsonInput.value = '';
-  } });
-
   root.append(
     snapshotsSections(app),
-    section('Scenario file',
-      textField('Name', () => store.scenario.name, (v) => (store.scenario.name = v)),
-      h('div', { class: 'row' },
-        button('Export JSON', () => {
-          store.scenario.center = { ...store.scenario.center, zoom: app.mapView.map.getZoom() };
-          exportScenario(store.scenario);
-        }, 'primary'),
-        h('label', { class: 'btn file' }, 'Import JSON…', jsonInput),
-      ),
-    ),
-    section('Demo scenarios',
-      selectField('Demo', DEMOS.map((d) => [d.key, d.label] as [string, string]), () => opt.demo, (v) => {
-        opt.demo = v;
-        demoHint.textContent = DEMOS.find((d) => d.key === v)!.hint;
-      }),
-      demoHint,
-      h('div', { class: 'row' },
-        demoBtn = button('Load demo', async () => {
-          const d = DEMOS.find((x) => x.key === opt.demo)!;
-          // Two clicks instead of a browser dialog (some embedded browsers never show confirm()).
-          if (!demoArmed) {
-            demoArmed = true;
-            demoBtn.textContent = 'Click again to replace the current scenario';
-            demoBtn.classList.add('armed');
-            clearTimeout(demoTimer);
-            demoTimer = window.setTimeout(disarm, 5000);
-            return;
-          }
-          disarm();
-          try {
-            const scn = await d.load();
-            clearSaved();
-            store.replaceScenario(scn);
-            const c = store.scenario.center;
-            app.mapView.map.setView([c.lat, c.lng], c.zoom);
-            app.respawnUsers();
-            void app.loadAreaData();
-            refreshFields(); // scenario name and the other fields of this tab
-            toast(`Loaded demo “${store.scenario.name}”`, 'ok');
-          } catch (e) {
-            toast(`Could not load the demo: ${(e as Error).message}`, 'error');
-          }
-        }, 'primary'),
-      ),
-    ),
     section('Clear',
       h('div', { class: 'row' },
-        button('Clear all stations', () => {
-          if (!confirm('Remove all stations?')) return;
+        confirmButton('Clear all stations', 'Click again: remove all stations', () => {
           store.scenario.stations = [];
           store.select(null);
           store.emit('network');
         }, 'danger'),
       ),
       h('div', { class: 'row' },
-        button('Delete everything', () => {
+        confirmButton('Delete everything', 'Click again: delete everything', () => {
           const s = store.scenario;
           const n = { st: s.stations.length, u: s.users?.length ?? 0, ap: s.wifi?.length ?? 0, pb: s.plannedBuildings?.length ?? 0 };
           if (!n.st && !n.u && !n.ap && !n.pb) return toast('The scenario is already empty.', 'info');
-          if (!confirm(`Delete everything: ${n.st} stations, ${n.u} users, ${n.ap} Wi-Fi access points and ${n.pb} planned buildings? Operators, settings and loaded roads are kept.`)) return;
           app.deleteAllUsers();
           s.stations = [];
           s.wifi = [];

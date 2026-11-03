@@ -73,3 +73,37 @@ export function snapshotsSizeKb(): number {
     return 0;
   }
 }
+
+/** File format of an exported snapshot. */
+interface SnapshotFile {
+  type: 'cellsim-snapshot';
+  version: 1;
+  name: string;
+  savedAt: number;
+  scenario: Scenario;
+  layers?: Partial<LayerState>;
+  view?: Snapshot['view'];
+}
+
+/** Downloads a snapshot as a .json file. */
+export function exportSnapshot(s: Pick<Snapshot, 'name' | 'savedAt' | 'scenario'> & { layers?: Partial<LayerState>; view?: Snapshot['view'] }) {
+  const file: SnapshotFile = { type: 'cellsim-snapshot', version: 1, name: s.name, savedAt: s.savedAt, scenario: s.scenario, layers: s.layers, view: s.view };
+  const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${s.name.replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'snapshot'}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/**
+ * Reads an exported snapshot, or a plain scenario file (older "Export JSON"), as
+ * { name, scenario, layers?, view? }. Throws on anything else.
+ */
+export function parseSnapshotFile(text: string): { name: string; scenario: Scenario; layers?: Partial<LayerState>; view?: Snapshot['view'] } {
+  const j = JSON.parse(text);
+  const isScenario = (x: unknown): x is Scenario => !!x && typeof x === 'object' && (x as Scenario).version === 1 && Array.isArray((x as Scenario).stations) && Array.isArray((x as Scenario).operators);
+  if (j?.type === 'cellsim-snapshot' && isScenario(j.scenario)) return { name: String(j.name || j.scenario.name || 'Imported'), scenario: j.scenario, layers: j.layers, view: j.view };
+  if (isScenario(j)) return { name: j.name || 'Imported scenario', scenario: j };
+  throw new Error('Not a CellSim snapshot or scenario file');
+}

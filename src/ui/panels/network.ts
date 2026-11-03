@@ -5,7 +5,7 @@ import { carrierLabel, sitesOf, siteRats } from '../../state/sites';
 import type { BaseStation } from '../../types';
 import type { App } from '../app';
 import { bulkEditor, type BulkState } from '../bulkEdit';
-import { button, clear, colorField, h, numField, section, selectField, textField, toast } from '../dom';
+import { button, clear, colorField, h, numField, section, selectField, textField, toast, confirmButton } from '../dom';
 
 export function networkPanel(app: App): HTMLElement {
   const { store } = app;
@@ -190,8 +190,7 @@ export function networkPanel(app: App): HTMLElement {
           }),
         ),
         store.scenario.stations.length
-          ? h('div', { class: 'row' }, button('Delete all listed', () => {
-              if (!confirm(`Delete ${items.length} stations?`)) return;
+          ? h('div', { class: 'row' }, confirmButton('Delete all listed', `Click again: delete ${items.length} stations`, () => {
               const ids = new Set(items.map((s) => s.id));
               store.scenario.stations = store.scenario.stations.filter((s) => !ids.has(s.id));
               store.select(null);

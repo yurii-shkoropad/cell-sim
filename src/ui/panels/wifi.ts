@@ -3,7 +3,7 @@ import { alignedChannels, WIFI_BANDS, wifiRangeM } from '../../radio/wifi';
 import type { OffloadPolicy, WifiAp } from '../../types';
 import { apFields } from '../apConfig';
 import type { App } from '../app';
-import { button, checkField, clear, fmt, h, numField, section, selectField, toast } from '../dom';
+import { button, checkField, clear, fmt, h, numField, section, selectField, toast, confirmButton } from '../dom';
 
 const POLICIES: [OffloadPolicy, string][] = [
   ['prefer-wifi', 'Always prefer Wi-Fi'],
@@ -189,9 +189,7 @@ export function wifiPanel(app: App): HTMLElement {
         ),
       ),
       h('div', { class: 'row' },
-        button('Delete all APs', () => {
-          if (confirm(`Delete all ${aps.length} access points?`)) store.removeAps(new Set(aps.map((a) => a.id)));
-        }, 'danger'),
+        confirmButton('Delete all APs', 'Click again: delete all APs', () => store.removeAps(new Set(aps.map((a) => a.id))), 'danger'),
       ),
       h('p', { class: 'hint' }, 'Users = sessions over Wi-Fi / associated phones · Air = airtime in use.'),
     );

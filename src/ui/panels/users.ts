@@ -2,7 +2,7 @@ import { generateUsers, templateFromSettings, type UserTemplate, type Zone } fro
 import type { SimUser } from '../../sim/engine';
 import { TECHS, type Mobility, type TrafficMode, type UserSpec } from '../../types';
 import type { App } from '../app';
-import { button, clear, fmt, h, numField, section, selectEl, selectField, toast } from '../dom';
+import { button, clear, fmt, h, numField, section, selectEl, selectField, toast, confirmButton } from '../dom';
 
 const MAX_ROWS = 300;
 const MOBILITY: [Mobility, string][] = [['static', 'Static'], ['walk', 'Pedestrian'], ['drive', 'Vehicle']];
@@ -145,8 +145,7 @@ export function usersPanel(app: App): HTMLElement {
           button('Start data', () => sessionAll('data'), '', 'Start a data session on every selected user'),
           button('Start voice', () => sessionAll('voice')),
           button('End sessions', () => sessionAll(null)),
-          button(`Delete ${selected.size}`, () => {
-            if (!confirm(`Delete ${selected.size} users?`)) return;
+          confirmButton(`Delete ${selected.size}`, `Click again: delete ${selected.size}`, () => {
             app.deleteUsers(ids());
             selected.clear();
             selectionChanged();
@@ -361,8 +360,8 @@ export function usersPanel(app: App): HTMLElement {
         h('div', { class: 'ul-head' }, h('label', { class: 'ul-selall' }, selectAll, 'All'), countEl),
         batchHost,
         listHost,
-        h('div', { class: 'row' }, button('Delete all users', () => {
-          if (!specs().length || !confirm(`Delete all ${specs().length} users?`)) return;
+        h('div', { class: 'row' }, confirmButton('Delete all users', 'Click again: delete all users', () => {
+          if (!specs().length) return;
           app.deleteAllUsers();
           selected.clear();
           selectionChanged();

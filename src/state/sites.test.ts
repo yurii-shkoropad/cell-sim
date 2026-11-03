@@ -34,3 +34,17 @@ describe('sector colour slots', () => {
     expect([0, 1, 2].map((i) => slotOf(bs, i))).toEqual([0, 2, 1]);
   });
 });
+
+describe('snapshot files', () => {
+  it('reads an exported snapshot and an older plain scenario file', async () => {
+    const { parseSnapshotFile } = await import('./snapshots');
+    const { defaultScenario } = await import('./defaults');
+    const scn = defaultScenario();
+    const snap = parseSnapshotFile(JSON.stringify({ type: 'cellsim-snapshot', version: 1, name: 'Tilt test', savedAt: 1, scenario: scn, view: { lat: 1, lng: 2, zoom: 15 } }));
+    expect(snap.name).toBe('Tilt test');
+    expect(snap.scenario.stations.length).toBe(scn.stations.length);
+    expect(snap.view?.zoom).toBe(15);
+    expect(parseSnapshotFile(JSON.stringify(scn)).name).toBe(scn.name);
+    expect(() => parseSnapshotFile('{"hello":1}')).toThrow();
+  });
+});

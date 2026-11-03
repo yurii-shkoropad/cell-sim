@@ -6,7 +6,7 @@ import { TECHS, type CalibratedModel, type CaSettings, type RadioSettings, type 
 import { CAL_REF_M } from '../../radio/cells';
 import { ENV_RADIUS_M } from '../../radio/buildings';
 import type { App } from '../app';
-import { button, checkField, clear, h, numField, refreshFields, section, selectField, toast } from '../dom';
+import { button, checkField, clear, h, numField, refreshFields, section, selectField, toast, confirmButton } from '../dom';
 
 export function radioPanel(app: App): HTMLElement {
   const { store } = app;
@@ -136,8 +136,7 @@ export function radioPanel(app: App): HTMLElement {
 
 /** "Reset all settings" button (Radio tab and Import/Export). */
 export function resetSettingsButton(app: App): HTMLElement {
-  return button('Reset all settings', () => {
-    if (!confirm('Reset every setting to its default? Radio and propagation (incl. calibration), mobility thresholds, simulation, user generation, Wi-Fi offload, carrier aggregation, and the map layers and colours. Stations, users, Wi-Fi APs and buildings are kept.')) return;
+  return confirmButton('Reset all settings', 'Click again: reset all settings', () => {
     app.store.resetSettings();
     refreshFields();
     app.mapView.renderStations();

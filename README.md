@@ -19,7 +19,7 @@ npm run build      # static bundle in dist/ (relative paths, so any static host 
 ```
 
 The app opens on the **Lviv Polytechnic** demo scenario. A second demo, **Kyivstar LTE – Table 4** (24 sites, 84 LTE carriers, 166 cells in central Lviv;
-bands assumed from the cell layer), loads from Import/Export → Demo scenarios (`public/scenarios/kyivstar-lviv-table4.json`). The demo area also ships OSM building footprints
+bands assumed from the cell layer), is a built-in snapshot in Import/Export → Snapshots (`public/scenarios/kyivstar-lviv-table4.json`). Snapshots save the whole state (scenario, settings, layers, map position) in the browser and can be exported / imported as JSON files. The demo area also ships OSM building footprints
 and heights (`public/buildings/lviv-polytechnic.json`) for the building-aware path-loss model. It has three operators, LTE 1800 hex grids,
 a GSM 900 layer with 4/12 reuse and an NR 3500 site. The road network for that area ships with the
 app (`public/roads/lviv-polytechnic.json`, © OpenStreetMap contributors, ODbL). Anywhere else, roads
