@@ -113,9 +113,24 @@ export function bulkEditor(app: App, targets: () => BaseStation[], state: BulkSt
     rerender();
   });
   const off = list.filter((b) => !enabledOnly(b)).length;
+  const setAir = (on: boolean) => {
+    const sts = targets();
+    if (!sts.length) return toast('No stations listed.', 'info');
+    for (const bs of sts) {
+      bs.enabled = on;
+      if (on) bs.sectors.forEach((s) => (s.enabled = true));
+    }
+    app.store.emit('network');
+    app.store.emit('selection');
+    toast(`${sts.length} stations ${on ? 'on air (all sectors)' : 'off air'}.`, 'ok');
+  };
   const det = h('details', { class: 'bulk', open: state.open, ontoggle: () => (state.open = det.open) },
     h('summary', null, `Edit all listed stations (${list.length})`),
     h('p', { class: 'hint' }, `Applies to every station in the list below${off ? ` (${off} disabled ones included)` : ''}. Narrow it with the filter first, e.g. “B20”, “LTE” or a site name. Sector parameters change every sector.`),
+    h('div', { class: 'row' },
+      button('All on air', () => setAir(true), '', 'Every listed station and all its sectors on air'),
+      button('All off air', () => setAir(false), '', 'Take every listed station off air (its sectors keep their own switches)'),
+    ),
     h('label', { class: 'field' }, h('span', { class: 'lbl' }, 'Mode'), h('span', { class: 'ctl' }, modeSel)),
     ...rows,
   );
