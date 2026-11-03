@@ -25,6 +25,8 @@ export interface LayerState {
   siteNameSize: number;
   /** What the label next to each user shows (from zoom 15); nothing ticked = no labels. */
   userLabel: UserLabelFields;
+  /** Colours of S1, S2, S3… in the "by sector" palette. */
+  sectorRgb: string[];
   /** Readout of level / SINR / cell under the mouse on the heatmap. */
   showReadout: boolean;
   /** User marker size: scale of the dots (1 = normal). */
@@ -59,6 +61,7 @@ export const USER_LABEL_FIELDS: [keyof UserLabelFields, string, string][] = [
   ['peak', 'Peak', 'Peak downlink rate if the user were alone in the cell, Mbps'],
 ];
 export const anyUserLabel = (f: UserLabelFields) => f.level || f.sinr || f.mod || f.peak;
+export const DEFAULT_SECTOR_RGB = ['#e53935', '#1e5bd8', '#2e9e44', '#f39c12', '#8e44ad', '#16a2a6'];
 export const SECTOR_PALETTES: [SectorPalette, string][] = [['operator', 'Operator colour'], ['cell', 'Per cell (unique colours)'], ['rgb', 'By sector: S1 red, S2 blue, S3 green']];
 
 /** 'model': the path-loss model was switched from outside the Radio panel (it re-renders). */
@@ -68,9 +71,9 @@ type Listener = () => void;
 const STORAGE_KEY = 'radio-sim.scenario.v1';
 const VIEW_PREFS_KEY = 'radio-sim.rsrp-look';
 
-type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel' | 'userSize' | 'showReadout'>;
+type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel' | 'userSize' | 'showReadout' | 'sectorRgb'>;
 
-const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: { level: false, sinr: false, mod: false, peak: false }, userSize: 1, showReadout: true });
+const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: { level: false, sinr: false, mod: false, peak: false }, userSize: 1, showReadout: true, sectorRgb: [...DEFAULT_SECTOR_RGB] });
 
 const defaultLayers = (): Omit<LayerState, keyof ViewPrefs> => ({
   heatmap: 'rsrp',
@@ -98,6 +101,7 @@ function loadViewPrefs(): ViewPrefs {
       showPci: v.showPci === true,
       showSiteNames: v.showSiteNames !== false,
       showReadout: v.showReadout !== false,
+      sectorRgb: DEFAULT_SECTOR_RGB.map((c, i) => (typeof v.sectorRgb?.[i] === 'string' && /^#[0-9a-f]{6}$/i.test(v.sectorRgb[i]) ? v.sectorRgb[i] : c)),
       userSize: USER_SIZES.some(([k]) => +k === v.userSize) ? v.userSize! : d.userSize,
       userLabel: (() => {
         const x = v.userLabel as unknown;
@@ -116,7 +120,7 @@ function loadViewPrefs(): ViewPrefs {
 /** Remember the colour choices (heatmap and sectors) in this browser. */
 export function saveViewPrefs(l: LayerState) {
   try {
-    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames, siteNameSize: l.siteNameSize, userLabel: { ...l.userLabel }, userSize: l.userSize, showReadout: l.showReadout };
+    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames, siteNameSize: l.siteNameSize, userLabel: { ...l.userLabel }, userSize: l.userSize, showReadout: l.showReadout, sectorRgb: [...l.sectorRgb] };
     localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
   } catch {
     /* storage unavailable: the choice lasts for this session */

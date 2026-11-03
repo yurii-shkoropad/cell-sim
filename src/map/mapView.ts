@@ -33,7 +33,6 @@ function userStyle(u: SimUser, onWifi: boolean, k = 1): L.CircleMarkerOptions {
   return { fillColor: fill, color: stroke, weight: (u.mode === 'static' ? 2 : 1) * Math.sqrt(k), radius: (u.session ? 5 : 3.5) * k };
 }
 /** 'By sector' palette: S1 red, S2 blue, S3 green, then extra colours for more sectors. */
-const SECTOR_RGB = ['#e53935', '#1e5bd8', '#2e9e44', '#f39c12', '#8e44ad', '#16a2a6'];
 
 const escapeHtml = (t: string) => t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 /**
@@ -99,7 +98,9 @@ export class MapView {
    */
   sectorColor(bs: BaseStation, i: number, open = this.store.selectedStationId === bs.id): string {
     const pal = this.store.layers.sectorPalette;
-    if (pal === 'rgb') return SECTOR_RGB[i % SECTOR_RGB.length];
+    const own = bs.sectors[i]?.color;
+    if (own) return own; // the user's colour for this cell wins in every palette
+    if (pal === 'rgb') return this.store.layers.sectorRgb[i % this.store.layers.sectorRgb.length];
     const cell = this.ctx?.cells.find((c) => c.sectorId === bs.sectors[i]?.id)?.color;
     if (pal === 'cell' || open) return cell ?? '#bbb';
     return this.store.scenario.operators.find((o) => o.id === bs.operatorId)?.color ?? '#555';
@@ -111,7 +112,7 @@ export class MapView {
    * palette, else the cell's own colour (also on the best-server heatmap, which needs one per cell).
    */
   cellColor(c: CellRF): string {
-    if (this.store.layers.sectorPalette === 'rgb' && this.store.layers.heatmap !== 'server') return SECTOR_RGB[c.sectorIdx % SECTOR_RGB.length];
+    if (!c.customColor && this.store.layers.sectorPalette === 'rgb' && this.store.layers.heatmap !== 'server') return this.store.layers.sectorRgb[c.sectorIdx % this.store.layers.sectorRgb.length];
     return c.color;
   }
 

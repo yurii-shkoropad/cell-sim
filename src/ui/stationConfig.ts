@@ -381,7 +381,28 @@ function hoTable(app: App, bs: BaseStation, changed: () => void): HTMLElement {
 function sectorTag(app: App, s: Sector, i: number): { tag: HTMLElement; hover: (row: HTMLElement) => void } {
   const bs = app.store.scenario.stations.find((b) => b.sectors.includes(s));
   const color = bs ? app.mapView.sectorColor(bs, i, true) : '#bbb';
-  const tag = h('span', { class: 'sec-tag', title: s.enabled ? 'Sector colour on the map (Layers → Sector colours)' : 'Sector off' }, h('span', { class: 'dot', style: `background:${color}` }), `S${i + 1}`);
+  // The dot is a colour picker: a cell's own colour beats the palette (Layers → Sector colours) everywhere.
+  const dot = h('span', { class: `dot pick ${s.color ? 'own' : ''}`, style: `background:${color}` });
+  const picker = h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(color) ? color : '#888888', oninput: () => {
+    dot.style.background = picker.value; // preview while picking; applied when the picker closes
+  }, onchange: () => {
+    s.color = picker.value;
+    dot.classList.add('own');
+    reset.style.display = '';
+    app.store.emit('network');
+    setTimeout(() => app.store.emit('selection'), 120); // other dots / chips pick it up from the rebuilt context
+  } });
+  const reset = h('button', { type: 'button', class: 'sec-color-reset', title: 'Back to the palette colour', onclick: (e: Event) => {
+    e.preventDefault();
+    delete s.color;
+    reset.style.display = 'none';
+    dot.classList.remove('own');
+    app.store.emit('network');
+    setTimeout(() => app.store.emit('selection'), 120); // re-render with the palette colour once the context is rebuilt
+  } }, '×');
+  if (!s.color) reset.style.display = 'none';
+  const tag = h('span', { class: 'sec-tag', title: s.enabled ? 'Click the dot to give this cell its own colour' : 'Sector off' },
+    h('label', { class: 'dot-pick' }, dot, picker), `S${i + 1}`, reset);
   const hover = (row: HTMLElement) => {
     const on = () => app.mapView.setSectorHighlight(s.id);
     const off = () => app.mapView.setSectorHighlight(null);

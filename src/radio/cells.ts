@@ -28,6 +28,8 @@ export interface CellRF {
   sectorId: string;
   /** Index of the sector on its station (S1 = 0). */
   sectorIdx: number;
+  /** `color` was set by the user (Sector.color). */
+  customColor: boolean;
   name: string;
   siteSeed: number;
   x: number;
@@ -211,7 +213,8 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
         rbBwHz: rbBandwidthHz(bs.tech, s.freqMHz),
         tch: bs.tech === 'GSM' ? gsmTrafficChannels(bs.trxCount) : 0,
         maxUsers: bs.maxUsers,
-        color: cellColor(cells.length),
+        color: s.color ?? cellColor(cells.length),
+        customColor: !!s.color,
         ...(() => {
           const a = antennaType(validAntennaFor(bs.tech, bs.antennaType));
           return { ports: a.ports, maxLayers: a.maxLayers, codebook: a.codebook, bfGainDb: a.bfGainDb, maxMu: a.maxMu };
