@@ -8,7 +8,7 @@ import type { BaseStation, Sector, Tech } from '../types';
 import type { App } from './app';
 import { beamProfile, fmtDist } from './beamProfile';
 import { buildingsAtMast, heightInfo } from './heightInfo';
-import { siteOfStation } from '../state/sites';
+import { bandShort, siteOfStation } from '../state/sites';
 import { SECTOR_RGB, SECTOR_RGB_NAMES, setSectorSlot, slotOf } from '../state/sectorColors';
 import { button, checkField, clear, fmt, h, numField, refreshFields, selectEl, selectField, textField, track } from './dom';
 
@@ -318,7 +318,8 @@ export function renderStationConfig(app: App, bs: BaseStation, host: HTMLElement
 function addCarrierRow(app: App, bs: BaseStation): HTMLElement {
   const { store } = app;
   const onSite = store.scenario.stations.filter((x) => x.tech === bs.tech && x.operatorId === bs.operatorId && Math.abs(x.lat - bs.lat) < 1e-4 && Math.abs(x.lng - bs.lng) < 1e-4);
-  const options = PRESETS.filter((p) => p.tech === bs.tech && !onSite.some((x) => x.band === p.band));
+  // Same band = same first word ("B3" and "B3 1800" are one band).
+  const options = PRESETS.filter((p) => p.tech === bs.tech && !onSite.some((x) => bandShort(x) === p.band.split(/\s+/)[0]));
   if (!options.length) return h('p', { class: 'hint' }, 'Every band of this RAT is already on this site.');
   let key = options[0].key;
   return h('div', null,
