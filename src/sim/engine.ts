@@ -1281,7 +1281,7 @@ export class SimEngine {
     if (f.traffic === 'data') u.nextData = this.t;
     this.users.push(u);
     this.moveUserTo(u, f.lat, f.lng, true);
-    if (f.target) this.setTarget(u, f.target.lat, f.target.lng);
+    if (f.target && u.mode !== 'static') this.setTarget(u, f.target.lat, f.target.lng);
     return u;
   }
 
@@ -1427,7 +1427,11 @@ export class SimEngine {
     u.mode = mode;
     u.speed = this.randSpeed(mode);
     u.path = null;
-    if (mode !== 'static') this.moveUserTo(u, u.lat, u.lng, true);
+    if (mode === 'static') {
+      // A static user stays where it is: its destination goes.
+      u.target = null;
+      u.arrived = false;
+    } else this.moveUserTo(u, u.lat, u.lng, true);
   }
 
   setTraffic(u: SimUser, traffic: TrafficMode) {

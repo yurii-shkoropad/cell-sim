@@ -256,7 +256,10 @@ function usersChanged() {
 function applySpec(u: SimUser, spec: UserSpec, patch: Partial<UserSpec>) {
   if (patch.operatorId !== undefined) engine.setOperator(u, engine.opIndex(spec.operatorId));
   if (patch.techs !== undefined) engine.setTechMask(u, techMaskOf(spec.techs));
-  if (patch.mobility !== undefined) engine.setMobility(u, spec.mobility);
+  if (patch.mobility !== undefined) {
+    engine.setMobility(u, spec.mobility);
+    if (spec.mobility === 'static') spec.target = null; // static users have no destination
+  }
   if (patch.traffic !== undefined) engine.setTraffic(u, spec.traffic);
   if (patch.demandMbps !== undefined) {
     u.demandMbps = spec.demandMbps;

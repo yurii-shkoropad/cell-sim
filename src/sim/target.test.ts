@@ -62,6 +62,19 @@ describe('user target', () => {
     expect(u.x).not.toBeCloseTo(x0, 1);
   });
 
+  it('switching to static drops the target and the user stays put', () => {
+    const { eng, u, at } = setup(true);
+    const t = at(300, 300);
+    eng.setTarget(u, t.lat, t.lng);
+    for (let i = 0; i < 20; i++) eng.step();
+    eng.setMobility(u, 'static');
+    expect(u.target).toBeNull();
+    expect(eng.targetRoute(u)).toEqual([]);
+    const x0 = u.x;
+    for (let i = 0; i < 100; i++) eng.step();
+    expect(u.x).toBe(x0);
+  });
+
   it('a target saved in the scenario is followed after reset', () => {
     const s = defaultScenario();
     const c = s.center;
