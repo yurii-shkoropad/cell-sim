@@ -150,6 +150,17 @@ export class UserInspector {
         after();
       })),
       row('Supports', techBoxes),
+      row('Band', (() => {
+        // Bands this phone can use (its operator and RATs), lowest frequency first.
+        const seen = new Map<string, number>();
+        for (const c of this.app.ctx().cells) if (c.operatorIdx === u.opIdx && techsOf(u.techMask).includes(c.tech) && !(seen.get(c.band)! <= c.freqMHz)) seen.set(c.band, c.freqMHz);
+        if (u.bandLock && !seen.has(u.bandLock)) seen.set(u.bandLock, 0);
+        const opts = [['', 'Any band (carrier aggregation allowed)'], ...[...seen.entries()].sort((a, b) => a[1] - b[1]).map(([b, f]) => [b, `${b} only${f ? ` (${Math.round(f)} MHz)` : ''} · no CA`])] as [string, string][];
+        return selectEl(opts, () => u.bandLock ?? '', (v) => {
+          engine.setBandLock(u, v || null);
+          after();
+        });
+      })()),
       row('Phone Rx antennas', selectEl(
         [['auto', `Auto (${engine.defaultUeRx(u)}, device default)`], ['1', '1'], ['2', '2'], ['4', '4'], ['8', '8']] as [string, string][],
         () => (u.ueRxOverride === null ? 'auto' : String(u.ueRxOverride)),
@@ -247,6 +258,7 @@ export class UserInspector {
     const ca = this.app.store.scenario.settings.ca;
     const ctx = this.app.ctx();
     if (!ca.enabled || u.serving < 0 || ctx.cells[u.serving].tech === 'GSM') return '';
+    if (u.bandLock) return kv('Carrier aggr.', `off: locked to ${u.bandLock}`);
     if (!u.scells.length) {
       const why = !(u.session?.kind === 'data' && !this.app.engine.onWifi(u)) ? 'data sessions only'
         : this.app.engine.caCarriers(u).length ? 'PCell only (see candidates below)'
@@ -260,7 +272,7 @@ export class UserInspector {
 
   /** Other carriers of the PCell's RAT and why each is (not) aggregated. */
   private caTable(u: SimUser): HTMLElement | string {
-    if (!this.app.store.scenario.settings.ca.enabled) return '';
+    if (!this.app.store.scenario.settings.ca.enabled || u.bandLock) return '';
     const ctx = this.app.ctx();
     if (u.serving < 0 || ctx.cells[u.serving].tech === 'GSM') return '';
     const rows = this.app.engine.caCarriers(u);

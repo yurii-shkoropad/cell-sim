@@ -164,6 +164,7 @@ const app: App = {
       traffic: u.traffic,
       demandMbps: u.demandMbps,
       ueRx: u.ueRxOverride,
+      bandLock: u.bandLock,
       speedKmh: u.speedFixed ? Math.round(u.speed * 3.6) : null,
     });
     store.emit('users');
@@ -266,6 +267,7 @@ function applySpec(u: SimUser, spec: UserSpec, patch: Partial<UserSpec>) {
     if (u.session?.kind === 'data' && spec.demandMbps !== null) u.session.demandMbps = spec.demandMbps;
   }
   if (patch.ueRx !== undefined) engine.setUeRx(u, spec.ueRx ?? null);
+  if (patch.bandLock !== undefined) engine.setBandLock(u, spec.bandLock ?? null);
   if (patch.speedKmh !== undefined) {
     u.speedFixed = spec.speedKmh != null;
     if (spec.speedKmh != null && u.mode !== 'static') u.speed = spec.speedKmh / 3.6;

@@ -28,6 +28,8 @@ export interface CellRF {
   sectorId: string;
   /** Index of the sector on its station (S1 = 0). */
   sectorIdx: number;
+  /** Short band label of the station ("B3", "n78", "GSM900"). */
+  band: string;
   /** Colour slot in the "by sector" palette (Sector.colorSlot, else the index). */
   colorSlot: number;
   name: string;
@@ -174,6 +176,7 @@ export function buildRadioContext(scn: Scenario, paths?: PathProvider, pathsVers
       cells.push({
         idx: cells.length,
         bsId: bs.id,
+        band: bs.band.trim().split(/\s+/)[0] || `${Math.round(s.freqMHz)}`,
         sectorId: s.id,
         sectorIdx: si,
         colorSlot: s.colorSlot ?? si,

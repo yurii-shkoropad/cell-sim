@@ -56,6 +56,8 @@ export interface SimUser {
   demandMbps: number | null;
   /** Receive antennas set for this phone; null = default for its device type. */
   ueRxOverride: number | null;
+  /** Only cells of this band (CellRF.band) are used, and carrier aggregation is off; null = any band. */
+  bandLock: string | null;
   speed: number;
   /** Being dragged on the map: mobility is suspended. */
   dragging: boolean;
@@ -352,6 +354,7 @@ export class SimEngine {
         traffic: 'random',
         demandMbps: null,
         ueRxOverride: null,
+        bandLock: null,
         speed: this.randSpeed(mode),
         dragging: false,
         x: 0,
@@ -524,12 +527,12 @@ export class SimEngine {
   // ---------------------------------------------------------------- radio
 
   private candidateCells(u: SimUser): number[] {
-    const key = `${u.opIdx}:${u.techMask}`;
+    const key = `${u.opIdx}:${u.techMask}:${u.bandLock ?? ''}`;
     let list = this.candidates.get(key);
     if (!list) {
       list = [];
       this.ctx.cells.forEach((c, i) => {
-        if (c.operatorIdx === u.opIdx && TECH_BIT[c.tech] & u.techMask) list!.push(i);
+        if (c.operatorIdx === u.opIdx && TECH_BIT[c.tech] & u.techMask && (!u.bandLock || c.band === u.bandLock)) list!.push(i);
       });
       this.candidates.set(key, list);
     }
@@ -955,7 +958,7 @@ export class SimEngine {
   /** CA is possible for this user right now: LTE/NR data session on cellular. */
   private caEligible(u: SimUser): boolean {
     const ca = this.settings.ca;
-    return ca.enabled && ca.maxCc > 1 && u.serving >= 0 && u.session?.kind === 'data' && !this.onWifi(u) && this.ctx.cells[u.serving].tech !== 'GSM';
+    return ca.enabled && ca.maxCc > 1 && !u.bandLock && u.serving >= 0 && u.session?.kind === 'data' && !this.onWifi(u) && this.ctx.cells[u.serving].tech !== 'GSM';
   }
 
   private clearScells(u: SimUser) {
@@ -1277,6 +1280,7 @@ export class SimEngine {
     u.traffic = f.traffic;
     u.demandMbps = f.demandMbps;
     u.ueRxOverride = f.ueRx ?? null;
+    u.bandLock = f.bandLock ?? null;
     if (f.traffic === 'voice') u.nextVoice = this.t;
     if (f.traffic === 'data') u.nextData = this.t;
     this.users.push(u);
@@ -1453,6 +1457,17 @@ export class SimEngine {
     this.endSessionNow(u, 'operator changed', true);
     u.opIdx = opIdx;
     this.setServing(u, -1);
+    this.refreshUser(u);
+  }
+
+  /** Lock the user to one band (null: any band). Leaving a cell of another band ends its session, as a RAT change does. */
+  setBandLock(u: SimUser, band: string | null) {
+    u.bandLock = band || null;
+    this.clearScells(u);
+    if (u.serving >= 0 && u.bandLock && this.ctx.cells[u.serving].band !== u.bandLock) {
+      this.endSessionNow(u, 'band locked', true);
+      this.setServing(u, -1);
+    }
     this.refreshUser(u);
   }
 

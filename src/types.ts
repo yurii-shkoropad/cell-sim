@@ -131,6 +131,8 @@ export interface UserSpec {
   wifi?: boolean | null;
   /** Destination: a moving user goes there from its start position along the roads and stops. */
   target?: { lat: number; lng: number } | null;
+  /** Use only cells of this band (short label, e.g. "B3"); no carrier aggregation. Missing/null = any band. */
+  bandLock?: string | null;
 }
 
 /**

@@ -93,4 +93,22 @@ describe('carrier aggregation', () => {
     // Alone and full-buffer: both carriers are used to the full.
     for (const l of cap) expect(l).toBeGreaterThan(0.99);
   });
+
+  it('a user locked to one band uses only that band and never aggregates', () => {
+    const free = single(true, 500);
+    const fu = free.users[0];
+    expect(fu.scells.length).toBeGreaterThan(0); // aggregates without a lock
+    const band = free.ctx.cells[fu.scells[0]].band; // lock to the SCell's band, not the PCell's
+    const eng = run((s) => {
+      s.settings.ca.enabled = true;
+      const p = new LocalProjection(s.center.lat, s.center.lng).toLatLng(120 * Math.sin(Math.PI / 6), 120 * Math.cos(Math.PI / 6));
+      s.users = [{ id: 'probe', name: 'Probe', lat: p.lat, lng: p.lng, operatorId: 'op1', techs: ['LTE'], mobility: 'static', traffic: 'data', demandMbps: 500, ueRx: 2, bandLock: band }];
+    }, 20);
+    const u = eng.users[0];
+    expect(u.serving).toBeGreaterThanOrEqual(0);
+    expect(eng.ctx.cells[u.serving].band).toBe(band);
+    expect(u.scells).toEqual([]);
+    for (let i = 0; i < 20; i++) eng.step();
+    expect(u.scells).toEqual([]);
+  });
 });
