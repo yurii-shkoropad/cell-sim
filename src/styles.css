@@ -233,7 +233,7 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; transition: all .2s; pointer-events: none;
-  background: #222; color: #fff; padding: 8px 14px; border-radius: 8px; z-index: 5000; max-width: 70vw; box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  background: #222; color: #fff; padding: 8px 14px; border-radius: 8px; z-index: 5000; width: max-content; max-width: min(70vw, 560px); box-shadow: 0 4px 12px rgba(0,0,0,.3);
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 #toast.error { background: var(--danger); }

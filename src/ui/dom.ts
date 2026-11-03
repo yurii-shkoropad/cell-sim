@@ -75,6 +75,7 @@ export function numField(label: string, get: () => number, set: (v: number) => v
 
 export function textField(label: string, get: () => string, set: (v: string) => void, title?: string): HTMLElement {
   const input = h('input', { type: 'text', value: get(), onchange: () => set(input.value) });
+  track(input, () => (input.value = get()));
   return h('label', { class: 'field', title }, h('span', { class: 'lbl' }, label), h('span', { class: 'ctl' }, input));
 }
 

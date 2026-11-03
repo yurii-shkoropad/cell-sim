@@ -6,7 +6,7 @@ import { clearSaved } from '../../state/store';
 import type { Scenario, Tech } from '../../types';
 import type { App } from '../app';
 import { resetSettingsButton } from './settings';
-import { button, clear, h, numField, section, selectField, textField, toast } from '../dom';
+import { button, clear, refreshFields, h, numField, section, selectField, textField, toast } from '../dom';
 
 const DEMOS: { key: string; label: string; hint: string; load(): Promise<Scenario> }[] = [
   {
@@ -47,6 +47,15 @@ export function dataPanel(app: App): HTMLElement {
   const presetsFor = (t: Tech) => PRESETS.filter((p) => p.tech === t).map((p) => [p.key, p.label] as [string, string]);
   const opt = { demo: 'table4', gsm: 'gsm900', lte: 'lte1800', nr: 'nr3500', osm: 'lte1800', osmOp: store.scenario.operators[0]?.id ?? '' };
 
+  let demoArmed = false;
+  let demoTimer = 0;
+  let demoBtn: HTMLButtonElement;
+  const disarm = () => {
+    demoArmed = false;
+    clearTimeout(demoTimer);
+    demoBtn.textContent = 'Load demo';
+    demoBtn.classList.remove('danger');
+  };
   const demoHint = h('p', { class: 'hint' }, DEMOS.find((d) => d.key === opt.demo)!.hint);
 
   const csvInput = h('input', { type: 'file', accept: '.csv,.txt,text/csv', onchange: async () => {
@@ -84,6 +93,7 @@ export function dataPanel(app: App): HTMLElement {
       const c = store.scenario.center;
       app.mapView.map.setView([c.lat, c.lng], c.zoom);
       app.respawnUsers();
+      refreshFields();
       toast(`Loaded scenario “${store.scenario.name}”`, 'ok');
     } catch (e) {
       toast(`Could not load scenario: ${(e as Error).message}`, 'error');
@@ -109,9 +119,18 @@ export function dataPanel(app: App): HTMLElement {
       }),
       demoHint,
       h('div', { class: 'row' },
-        button('Load demo', async () => {
+        demoBtn = button('Load demo', async () => {
           const d = DEMOS.find((x) => x.key === opt.demo)!;
-          if (!confirm(`Replace the current scenario with the demo “${d.label}”? Export it first if you want to keep it.`)) return;
+          // Two clicks instead of a browser dialog (some embedded browsers never show confirm()).
+          if (!demoArmed) {
+            demoArmed = true;
+            demoBtn.textContent = 'Click again to replace the current scenario';
+            demoBtn.classList.add('danger');
+            clearTimeout(demoTimer);
+            demoTimer = window.setTimeout(disarm, 5000);
+            return;
+          }
+          disarm();
           try {
             const scn = await d.load();
             clearSaved();
@@ -120,6 +139,7 @@ export function dataPanel(app: App): HTMLElement {
             app.mapView.map.setView([c.lat, c.lng], c.zoom);
             app.respawnUsers();
             void app.loadAreaData();
+            refreshFields(); // scenario name and the other fields of this tab
             toast(`Loaded demo “${store.scenario.name}”`, 'ok');
           } catch (e) {
             toast(`Could not load the demo: ${(e as Error).message}`, 'error');
