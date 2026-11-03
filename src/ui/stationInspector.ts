@@ -179,7 +179,28 @@ export class StationInspector {
           style: `--c:${op?.color ?? '#888'}`,
           title: `${b.name} · ${b.tech} ${b.band}${b.enabled ? '' : ' (off air)'}`,
           onclick: () => store.select(b.id),
-        }, `${carrierLabel(b, site.name)} · ${b.band.replace(/ \(assumed\)$/, '')}`)))
+        }, `${carrierLabel(b, site.name)} · ${b.band.replace(/ \(assumed\)$/, '')}`)),
+        // Move the selected carrier left / right: the order of the chips, the carrier list and the overview.
+        ...(() => {
+          const k = site.stations.findIndex((b) => b.id === bs.id);
+          const move = (d: -1 | 1) => {
+            const other = site.stations[k + d];
+            if (!other) return;
+            const list = store.scenario.stations;
+            const a = list.indexOf(bs);
+            const b = list.indexOf(other);
+            [list[a], list[b]] = [list[b], list[a]];
+            store.emit('network');
+            this.renderHead(bs);
+            if (this.tab === 'overview') this.renderOverview();
+          };
+          const btn = (d: -1 | 1, label: string, title: string) => {
+            const el = button(label, () => move(d), 'icon si-move', title);
+            el.disabled = !site.stations[k + d];
+            return el;
+          };
+          return [btn(-1, '‹', 'Move this carrier left'), btn(1, '›', 'Move this carrier right')];
+        })())
       : null;
     clear(this.head);
     this.head.append(

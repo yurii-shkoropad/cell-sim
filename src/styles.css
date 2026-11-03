@@ -410,3 +410,4 @@ table.meas td.nowrap { white-space: nowrap; }
 .slot-pop { position: fixed; z-index: 2000; display: flex; gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
 .slot-pop .slot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; background: var(--c); box-shadow: 0 0 0 1px rgba(0,0,0,.2); cursor: pointer; padding: 0; }
 .slot-pop .slot.on { box-shadow: 0 0 0 2px #1d1d1b; }
+.si-carriers .si-move { padding: 0 6px; min-width: 0; font-size: 13px; line-height: 1.4; }
