@@ -16,7 +16,6 @@ import { StationInspector } from './ui/stationInspector';
 import { ApInspector } from './ui/apInspector';
 import { UserInspector } from './ui/userInspector';
 import { dataPanel, planningPanel } from './ui/panels/data';
-import { snapshotsPanel } from './ui/panels/snapshots';
 import { helpPanel } from './ui/panels/help';
 import { networkPanel } from './ui/panels/network';
 import { layersPanel, radioPanel } from './ui/panels/settings';
@@ -285,7 +284,6 @@ const tabs: [string, string, () => HTMLElement][] = [
   ['buildings', 'Buildings', () => buildingsPanel(app)],
   ['layers', 'Layers', () => layersPanel(app)],
   ['plan', 'Planning', () => planningPanel(app)],
-  ['snapshots', 'Snapshots', () => snapshotsPanel(app)],
   ['data', 'Import/Export', () => dataPanel(app)],
   ['help', 'Models', () => helpPanel()],
 ];

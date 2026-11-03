@@ -4,10 +4,10 @@ import { button, clear, confirmButton, h, refreshFields, section, toast } from '
 
 const fmtTime = (t: number) => new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-/** Snapshots tab: save the whole state under a name, and load, rename, update or delete it later. */
-export function snapshotsPanel(app: App): HTMLElement {
+/** Snapshots (Import/Export tab): save the whole state under a name, and load, rename, update or delete it later. */
+export function snapshotsSections(app: App): HTMLElement {
   const { store } = app;
-  const root = h('div', { class: 'panel' });
+  const root = h('div');
   const listHost = h('div', { class: 'snap-list' });
 
   const view = () => {

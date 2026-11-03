@@ -6,6 +6,7 @@ import { clearSaved } from '../../state/store';
 import type { Scenario, Tech } from '../../types';
 import type { App } from '../app';
 import { resetSettingsButton } from './settings';
+import { snapshotsSections } from './snapshots';
 import { button, clear, refreshFields, h, numField, section, selectField, textField, toast } from '../dom';
 
 const DEMOS: { key: string; label: string; hint: string; load(): Promise<Scenario> }[] = [
@@ -102,6 +103,7 @@ export function dataPanel(app: App): HTMLElement {
   } });
 
   root.append(
+    snapshotsSections(app),
     section('Scenario file',
       textField('Name', () => store.scenario.name, (v) => (store.scenario.name = v)),
       h('div', { class: 'row' },
