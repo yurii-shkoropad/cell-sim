@@ -38,8 +38,8 @@ export interface Sector {
   enabled: boolean;
   /** Transmit power of this sector, dBm (before feeder loss); missing = the station's Tx power. */
   txPowerDbm?: number;
-  /** Own colour of this cell on the map and in the panels (any sector palette); missing = automatic. */
-  color?: string;
+  /** Colour of this sector in the "by sector" palette (0 red, 1 blue, 2 green…); missing = its position. */
+  colorSlot?: number;
   /** Per-cell handover parameters; a missing field uses the global value for the RAT. */
   ho?: SectorHo;
 }

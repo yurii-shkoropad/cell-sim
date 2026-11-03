@@ -21,3 +21,16 @@ describe('sites', () => {
     expect(siteName([a, b])).toBe('Main campus');
   });
 });
+
+describe('sector colour slots', () => {
+  it('swaps colours so no two sectors of a station share one', async () => {
+    const { setSectorSlot, slotOf } = await import('./sectorColors');
+    const bs = makeStation(presetByKey('lte1800'), 49.835, 24.01, 'op1', 'X', { sectors: 3 });
+    setSectorSlot(bs, 0, 1); // S1 → blue: S2 takes red
+    expect([0, 1, 2].map((i) => slotOf(bs, i))).toEqual([1, 0, 2]);
+    setSectorSlot(bs, 2, 1); // S3 → blue: S1 takes green
+    expect([0, 1, 2].map((i) => slotOf(bs, i))).toEqual([2, 0, 1]);
+    setSectorSlot(bs, 0, 0); // S1 → red: S2 takes green
+    expect([0, 1, 2].map((i) => slotOf(bs, i))).toEqual([0, 2, 1]);
+  });
+});

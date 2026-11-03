@@ -1,7 +1,7 @@
 import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { BUILDING_LEGEND } from '../../map/mapView';
 import { RSRP_PALETTES } from '../../map/colors';
-import { DEFAULT_SECTOR_RGB, saveViewPrefs, SECTOR_PALETTES, SITE_BADGES, SITE_NAME_SIZES, USER_LABEL_FIELDS, USER_SIZES } from '../../state/store';
+import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES, SITE_NAME_SIZES, USER_LABEL_FIELDS, USER_SIZES } from '../../state/store';
 import { TECHS, type CalibratedModel, type CaSettings, type RadioSettings, type Tech, type TechThresholds } from '../../types';
 import { CAL_REF_M } from '../../radio/cells';
 import { ENV_RADIUS_M } from '../../radio/buildings';
@@ -350,32 +350,7 @@ export function layersPanel(app: App): HTMLElement {
           saveViewPrefs(l);
           app.mapView.renderSectors();
           store.emit('selection'); // the open station editor re-colours its sector dots
-          render(); // the S1/S2/S3 colour pickers
-        }, 'Best-server heatmap: sectors always use the cell colours of the heatmap. A single cell can get its own colour: click its dot in Configure → Sectors.'),
-        l.sectorPalette === 'rgb'
-          ? h('div', { class: 'field' },
-              h('span', { class: 'lbl' }, 'Sector palette'),
-              h('span', { class: 'ctl sector-rgb' },
-                ...l.sectorRgb.map((c, i) => {
-                  const inp = h('input', { type: 'color', value: c, title: `Colour of sector ${i + 1}`, oninput: () => {
-                    l.sectorRgb[i] = inp.value;
-                    saveViewPrefs(l);
-                    app.mapView.renderSectors();
-                    app.mapView.renderUsers(app.engine);
-                    store.emit('selection');
-                  } });
-                  return h('label', null, `S${i + 1}`, inp);
-                }),
-                button('↺', () => {
-                  l.sectorRgb = [...DEFAULT_SECTOR_RGB];
-                  saveViewPrefs(l);
-                  app.mapView.renderSectors();
-                  store.emit('selection');
-                  render();
-                }, 'icon', 'Default colours'),
-              ),
-            )
-          : '',
+        }, 'By sector: click a sector’s dot in Configure → Sectors to swap colours between the sectors of a station. Best-server heatmap: sectors always use the cell colours of the heatmap.'),
         checkField('Users', () => l.showUsers, (v) => {
           l.showUsers = v;
           app.mapView.renderUsers(app.engine);

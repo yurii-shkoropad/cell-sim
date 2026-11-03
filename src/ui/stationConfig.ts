@@ -9,6 +9,7 @@ import type { App } from './app';
 import { beamProfile, fmtDist } from './beamProfile';
 import { buildingsAtMast, heightInfo } from './heightInfo';
 import { siteOfStation } from '../state/sites';
+import { SECTOR_RGB, SECTOR_RGB_NAMES, setSectorSlot, slotOf } from '../state/sectorColors';
 import { button, checkField, clear, fmt, h, numField, refreshFields, selectEl, selectField, textField, track } from './dom';
 
 const BW_OPTIONS: Record<Tech, number[]> = {
@@ -381,28 +382,40 @@ function hoTable(app: App, bs: BaseStation, changed: () => void): HTMLElement {
 function sectorTag(app: App, s: Sector, i: number): { tag: HTMLElement; hover: (row: HTMLElement) => void } {
   const bs = app.store.scenario.stations.find((b) => b.sectors.includes(s));
   const color = bs ? app.mapView.sectorColor(bs, i, true) : '#bbb';
-  // The dot is a colour picker: a cell's own colour beats the palette (Layers → Sector colours) everywhere.
-  const dot = h('span', { class: `dot pick ${s.color ? 'own' : ''}`, style: `background:${color}` });
-  const picker = h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(color) ? color : '#888888', oninput: () => {
-    dot.style.background = picker.value; // preview while picking; applied when the picker closes
-  }, onchange: () => {
-    s.color = picker.value;
-    dot.classList.add('own');
-    reset.style.display = '';
-    app.store.emit('network');
-    setTimeout(() => app.store.emit('selection'), 120); // other dots / chips pick it up from the rebuilt context
-  } });
-  const reset = h('button', { type: 'button', class: 'sec-color-reset', title: 'Back to the palette colour', onclick: (e: Event) => {
-    e.preventDefault();
-    delete s.color;
-    reset.style.display = 'none';
-    dot.classList.remove('own');
-    app.store.emit('network');
-    setTimeout(() => app.store.emit('selection'), 120); // re-render with the palette colour once the context is rebuilt
-  } }, '×');
-  if (!s.color) reset.style.display = 'none';
-  const tag = h('span', { class: 'sec-tag', title: s.enabled ? 'Click the dot to give this cell its own colour' : 'Sector off' },
-    h('label', { class: 'dot-pick' }, dot, picker), `S${i + 1}`, reset);
+  const dot = h('span', { class: 'dot', style: `background:${color}` });
+  const tag = h('span', { class: 'sec-tag', title: s.enabled ? 'Sector colour on the map (Layers → Sector colours)' : 'Sector off' }, dot, `S${i + 1}`);
+  // "By sector" palette: the dot opens the palette colours; picking one swaps it with the sector that had it.
+  if (bs && app.store.layers.sectorPalette === 'rgb') {
+    dot.classList.add('pick');
+    tag.title = 'Click the dot to swap colours between this station’s sectors';
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelector('.slot-pop')?.remove();
+      const n = Math.min(SECTOR_RGB.length, Math.max(3, bs.sectors.length));
+      const pop = h('div', { class: 'slot-pop' },
+        ...SECTOR_RGB.slice(0, n).map((c, k) => {
+          const owner = bs.sectors.findIndex((_, j) => slotOf(bs, j) === k);
+          return h('button', { type: 'button', class: `slot ${slotOf(bs, i) === k ? 'on' : ''}`, style: `--c:${c}`, title: `${SECTOR_RGB_NAMES[k]}${owner >= 0 && owner !== i ? ` (swap with S${owner + 1})` : ''}`, onclick: (ev: Event) => {
+            ev.stopPropagation();
+            pop.remove();
+            setSectorSlot(bs, i, k);
+            app.store.emit('network');
+            app.mapView.renderSectors();
+            setTimeout(() => app.store.emit('selection'), 120); // every dot and chip follows from the rebuilt context
+          } });
+        }),
+      );
+      // Fixed to the viewport: the sector table scrolls sideways and would clip it.
+      const r = dot.getBoundingClientRect();
+      pop.style.left = `${r.left - 4}px`;
+      pop.style.top = `${r.bottom + 4}px`;
+      document.body.appendChild(pop);
+      setTimeout(() => {
+        document.addEventListener('click', () => pop.remove(), { once: true });
+        document.addEventListener('scroll', () => pop.remove(), { once: true, capture: true }); // it would stay behind
+      });
+    });
+  }
   const hover = (row: HTMLElement) => {
     const on = () => app.mapView.setSectorHighlight(s.id);
     const off = () => app.mapView.setSectorHighlight(null);

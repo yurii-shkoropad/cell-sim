@@ -10,6 +10,7 @@ import { anyUserLabel, type Store } from '../state/store';
 import type { BuildingSet } from '../radio/buildings';
 import type { BaseStation, PlannedBuilding, WifiAp } from '../types';
 import { siteBands, siteKeyOf, sitesOf, siteRats } from '../state/sites';
+import { SECTOR_RGB, slotOf } from '../state/sectorColors';
 import { wifiRangeM } from '../radio/wifi';
 
 const TECH_SHORT = { GSM: '2G', LTE: '4G', NR: '5G' } as const;
@@ -98,9 +99,7 @@ export class MapView {
    */
   sectorColor(bs: BaseStation, i: number, open = this.store.selectedStationId === bs.id): string {
     const pal = this.store.layers.sectorPalette;
-    const own = bs.sectors[i]?.color;
-    if (own) return own; // the user's colour for this cell wins in every palette
-    if (pal === 'rgb') return this.store.layers.sectorRgb[i % this.store.layers.sectorRgb.length];
+    if (pal === 'rgb') return SECTOR_RGB[slotOf(bs, i) % SECTOR_RGB.length];
     const cell = this.ctx?.cells.find((c) => c.sectorId === bs.sectors[i]?.id)?.color;
     if (pal === 'cell' || open) return cell ?? '#bbb';
     return this.store.scenario.operators.find((o) => o.id === bs.operatorId)?.color ?? '#555';
@@ -112,7 +111,7 @@ export class MapView {
    * palette, else the cell's own colour (also on the best-server heatmap, which needs one per cell).
    */
   cellColor(c: CellRF): string {
-    if (!c.customColor && this.store.layers.sectorPalette === 'rgb' && this.store.layers.heatmap !== 'server') return this.store.layers.sectorRgb[c.sectorIdx % this.store.layers.sectorRgb.length];
+    if (this.store.layers.sectorPalette === 'rgb' && this.store.layers.heatmap !== 'server') return SECTOR_RGB[c.colorSlot % SECTOR_RGB.length];
     return c.color;
   }
 
