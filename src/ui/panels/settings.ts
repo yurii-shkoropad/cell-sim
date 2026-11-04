@@ -318,7 +318,7 @@ export function layersPanel(app: App): HTMLElement {
         }, 'The box with level, SINR, serving cell and peak rate under the mouse'),
         h('p', { class: 'hint' }, 'Signal level is the best cell of the selected operator/RAT. SINR counts interference from every cell on overlapping spectrum (all operators). Hover over the map to read values.'),
       ),
-      section('Overlays',
+      section('Sites & sectors',
         checkField('Sectors', () => l.showSectors, (v) => {
           l.showSectors = v;
           app.mapView.renderSectors();
@@ -350,6 +350,8 @@ export function layersPanel(app: App): HTMLElement {
           app.mapView.renderSectors();
           store.emit('selection'); // the open station editor re-colours its sector dots
         }, 'By sector: click a sector’s dot in Configure → Sectors to swap colours between the sectors of a station. Best-server heatmap: sectors always use the cell colours of the heatmap.'),
+      ),
+      section('Users',
         checkField('Users', () => l.showUsers, (v) => {
           l.showUsers = v;
           app.mapView.renderUsers(app.engine);
@@ -394,26 +396,10 @@ export function layersPanel(app: App): HTMLElement {
           })),
         ),
         h('p', { class: 'hint' }, 'Peak: the serving carrier at the user’s SINR, as if alone in the cell. CA peak: the same summed over every aggregated carrier (e.g. “CA 3CC 89.8 Mbps”). The user inspector shows what is actually delivered now.'),
-        checkField('Wi-Fi APs and association range', () => l.showWifi, (v) => {
-          l.showWifi = v;
-          app.mapView.renderWifi();
-        }, 'Dashed circle: where the median RSSI equals the Wi-Fi min RSSI'),
         checkField('Links: active user → serving cell / Wi-Fi AP', () => l.showLinks, (v) => {
           l.showLinks = v;
           app.mapView.renderUsers(app.engine);
         }, 'Solid: serving cell (PCell). Dashed, in the cell\'s colour and shifted aside: carrier-aggregation secondary cells (SCells). The user open in the inspector always shows its links.'),
-        checkField('Road graph', () => l.showRoads, (v) => {
-          l.showRoads = v;
-          app.mapView.setRoadsVisible(v);
-        }),
-        checkField('Buildings (by height, from zoom 15)', () => l.showBuildings, (v) => {
-          l.showBuildings = v;
-          app.mapView.renderBuildings();
-          render(); // show/hide the height legend
-        }, 'OSM footprints coloured by height; dashed outline = height unknown (default used)'),
-        l.showBuildings
-          ? h('div', { class: 'legend-users' }, ...BUILDING_LEGEND.map(([max, c], i) => h('span', null, h('i', { style: `background:${c};border-radius:2px` }), i === BUILDING_LEGEND.length - 1 ? `≥ ${BUILDING_LEGEND[i - 1][0]} m` : `< ${max} m`)))
-          : '',
         h('div', { class: 'legend-users' },
           ...(() => {
             const dot = (c: string, t: string) => h('span', null, h('i', { style: `background:${c}` }), t);
@@ -435,6 +421,24 @@ export function layersPanel(app: App): HTMLElement {
           h('span', null, h('i', { style: 'background:#fff;border:2px solid #f2b705' }), 'static'),
           h('span', null, h('i', { style: 'background:#fff;border:2px solid #2a78d6' }), 'selected in Users list'),
         ),
+      ),
+      section('Map',
+        checkField('Wi-Fi APs and association range', () => l.showWifi, (v) => {
+          l.showWifi = v;
+          app.mapView.renderWifi();
+        }, 'Dashed circle: where the median RSSI equals the Wi-Fi min RSSI'),
+        checkField('Road graph', () => l.showRoads, (v) => {
+          l.showRoads = v;
+          app.mapView.setRoadsVisible(v);
+        }),
+        checkField('Buildings (by height, from zoom 15)', () => l.showBuildings, (v) => {
+          l.showBuildings = v;
+          app.mapView.renderBuildings();
+          render(); // show/hide the height legend
+        }, 'OSM footprints coloured by height; dashed outline = height unknown (default used)'),
+        l.showBuildings
+          ? h('div', { class: 'legend-users' }, ...BUILDING_LEGEND.map(([max, c], i) => h('span', null, h('i', { style: `background:${c};border-radius:2px` }), i === BUILDING_LEGEND.length - 1 ? `≥ ${BUILDING_LEGEND[i - 1][0]} m` : `< ${max} m`)))
+          : '',
       ),
     );
   };
