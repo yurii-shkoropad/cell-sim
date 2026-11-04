@@ -51,14 +51,17 @@ export interface UserLabelFields {
   sinr: boolean;
   mod: boolean;
   peak: boolean;
+  /** Peak with carrier aggregation: PCell + SCells, shown only while the user aggregates. */
+  ca: boolean;
 }
 export const USER_LABEL_FIELDS: [keyof UserLabelFields, string, string][] = [
   ['level', 'Level', 'RSRP (RxLev for GSM) to the serving cell, dBm'],
   ['sinr', 'SINR', 'SINR of the serving cell, dB'],
   ['mod', 'Modulation', 'Modulation reached at this SINR'],
   ['peak', 'Peak', 'Peak downlink rate if the user were alone in the cell, Mbps'],
+  ['ca', 'CA peak', 'With carrier aggregation: number of carriers and the peak over all of them (PCell + SCells), Mbps; only while the user aggregates'],
 ];
-export const anyUserLabel = (f: UserLabelFields) => f.level || f.sinr || f.mod || f.peak;
+export const anyUserLabel = (f: UserLabelFields) => f.level || f.sinr || f.mod || f.peak || f.ca;
 export const SECTOR_PALETTES: [SectorPalette, string][] = [['operator', 'Operator colour'], ['cell', 'Per cell (unique colours)'], ['rgb', 'By sector: S1 red, S2 blue, S3 green']];
 
 /** 'model': the path-loss model was switched from outside the Radio panel (it re-renders). */
@@ -70,7 +73,7 @@ const VIEW_PREFS_KEY = 'radio-sim.rsrp-look';
 
 type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel' | 'userSize' | 'showReadout'>;
 
-const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: { level: false, sinr: false, mod: false, peak: false }, userSize: 1, showReadout: true });
+const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: { level: false, sinr: false, mod: false, peak: false, ca: false }, userSize: 1, showReadout: true });
 
 const defaultLayers = (): Omit<LayerState, keyof ViewPrefs> => ({
   heatmap: 'rsrp',
@@ -102,9 +105,9 @@ function loadViewPrefs(): ViewPrefs {
       userLabel: (() => {
         const x = v.userLabel as unknown;
         // Older choice: 'rsrp' / 'rsrp-sinr'.
-        if (x === 'rsrp' || x === 'rsrp-sinr') return { level: true, sinr: x === 'rsrp-sinr', mod: false, peak: false };
+        if (x === 'rsrp' || x === 'rsrp-sinr') return { level: true, sinr: x === 'rsrp-sinr', mod: false, peak: false, ca: false };
         const o = (x && typeof x === 'object' ? x : {}) as Partial<UserLabelFields>;
-        return { level: o.level === true, sinr: o.sinr === true, mod: o.mod === true, peak: o.peak === true };
+        return { level: o.level === true, sinr: o.sinr === true, mod: o.mod === true, peak: o.peak === true, ca: o.ca === true };
       })(),
       siteNameSize: SITE_NAME_SIZES.some(([k]) => +k === v.siteNameSize) ? v.siteNameSize! : d.siteNameSize,
     };

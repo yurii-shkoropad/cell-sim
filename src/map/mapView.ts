@@ -600,9 +600,16 @@ export class MapView {
               parts.push(`${p >= 100 ? p.toFixed(0) : p.toFixed(1)} Mbps`);
             }
           }
+          if (f.ca && u.scells.length && Number.isFinite(u.sinr)) {
+            const ueRx = engine.ueRx(u);
+            let sum = peakRateMbps(c, u.sinr, radio, ueRx);
+            u.scells.forEach((i, k) => (sum += peakRateMbps(this.ctx!.cells[i], u.scellSinr[k], radio, ueRx)));
+            parts.push(`CA ${1 + u.scells.length}CC ${sum >= 100 ? sum.toFixed(0) : sum.toFixed(1)} Mbps`);
+          }
           if (wifi) parts.push('Wi-Fi');
           text = parts.join(' · ');
         }
+        if (!text) continue; // e.g. only "CA peak" ticked and this user isn't aggregating
         const color = c ? this.cellColor(c) : '#999';
         let e = this.userLabels[k];
         if (!e) {
