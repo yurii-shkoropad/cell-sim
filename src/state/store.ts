@@ -31,6 +31,8 @@ export interface LayerState {
   userColor: UserColor;
   /** The colour of every user with "One colour for all users" (one of USER_FIXED_COLORS). */
   userFixedColor: string;
+  /** Active users (call / data) drawn larger than idle ones; off = one size for all. */
+  userActiveLarger: boolean;
   /** User marker size: scale of the dots (1 = normal). */
   userSize: number;
   /** What a site marker shows: its bands, or RATs with carrier counts. */
@@ -79,9 +81,9 @@ type Listener = () => void;
 const STORAGE_KEY = 'radio-sim.scenario.v1';
 const VIEW_PREFS_KEY = 'radio-sim.rsrp-look';
 
-type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel' | 'userSize' | 'showReadout' | 'userColor' | 'userFixedColor'>;
+type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel' | 'userSize' | 'showReadout' | 'userColor' | 'userFixedColor' | 'userActiveLarger'>;
 
-const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: { level: false, sinr: false, mod: false, peak: false, ca: false }, userSize: 1, showReadout: true, userColor: 'state', userFixedColor: USER_FIXED_COLORS[0] });
+const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: { level: false, sinr: false, mod: false, peak: false, ca: false }, userSize: 1, showReadout: true, userColor: 'state', userFixedColor: USER_FIXED_COLORS[0], userActiveLarger: true });
 
 const defaultLayers = (): Omit<LayerState, keyof ViewPrefs> => ({
   heatmap: 'rsrp',
@@ -110,6 +112,7 @@ function loadViewPrefs(): ViewPrefs {
       showSiteNames: v.showSiteNames !== false,
       showReadout: v.showReadout !== false,
       userColor: USER_COLORS.some(([k]) => k === v.userColor) ? v.userColor! : d.userColor,
+      userActiveLarger: v.userActiveLarger !== false,
       userFixedColor: USER_FIXED_COLORS.includes(v.userFixedColor ?? '') ? v.userFixedColor! : d.userFixedColor,
       userSize: USER_SIZES.some(([k]) => +k === v.userSize) ? v.userSize! : d.userSize,
       userLabel: (() => {
@@ -129,7 +132,7 @@ function loadViewPrefs(): ViewPrefs {
 /** Remember the colour choices (heatmap and sectors) in this browser. */
 export function saveViewPrefs(l: LayerState) {
   try {
-    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames, siteNameSize: l.siteNameSize, userLabel: { ...l.userLabel }, userSize: l.userSize, showReadout: l.showReadout, userColor: l.userColor, userFixedColor: l.userFixedColor };
+    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames, siteNameSize: l.siteNameSize, userLabel: { ...l.userLabel }, userSize: l.userSize, showReadout: l.showReadout, userColor: l.userColor, userFixedColor: l.userFixedColor, userActiveLarger: l.userActiveLarger };
     localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
   } catch {
     /* storage unavailable: the choice lasts for this session */

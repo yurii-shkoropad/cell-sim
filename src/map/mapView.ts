@@ -32,10 +32,10 @@ export const TECH_USER_COLOR: Record<string, string> = { GSM: '#e67e22', LTE: '#
 export const BAND_USER_COLORS = ['#e6194b', '#f58231', '#d4b000', '#3cb44b', '#4363d8', '#911eb4', '#42b4d4', '#f032e6', '#7a5c00', '#008080'];
 
 /** Fill = state (idle / voice / data / over Wi-Fi / no service) unless `fillOverride`; outline = mobility; active users are larger. */
-function userStyle(u: SimUser, onWifi: boolean, k = 1, fillOverride?: string): L.CircleMarkerOptions {
+function userStyle(u: SimUser, onWifi: boolean, k = 1, fillOverride?: string, activeLarger = true): L.CircleMarkerOptions {
   const fill = fillOverride ?? (onWifi ? WIFI_COLOR : u.serving < 0 && !u.session ? '#000' : u.session?.kind === 'voice' ? '#1565c0' : u.session?.kind === 'data' ? '#2e7d32' : '#9e9e9e');
   const stroke = u.mode === 'drive' ? '#222' : u.mode === 'static' ? '#f2b705' : '#fff';
-  return { fillColor: fill, color: stroke, weight: (u.mode === 'static' ? 2 : 1) * Math.sqrt(k), radius: (u.session ? 5 : 3.5) * k };
+  return { fillColor: fill, color: stroke, weight: (u.mode === 'static' ? 2 : 1) * Math.sqrt(k), radius: (activeLarger ? (u.session ? 5 : 3.5) : 4.25) * k };
 }
 /** 'By sector' palette: S1 red, S2 blue, S3 green, then extra colours for more sectors. */
 
@@ -682,7 +682,7 @@ export class MapView {
         }
         (m as UserMarker).uid = u.id;
         m.setLatLng([u.lat, u.lng]);
-        const st = userStyle(u, engine.onWifi(u), lay.userSize, this.userFill(u, engine));
+        const st = userStyle(u, engine.onWifi(u), lay.userSize, this.userFill(u, engine), lay.userActiveLarger);
         m.setStyle(st);
         m.setRadius(st.radius!);
       }

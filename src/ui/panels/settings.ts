@@ -359,6 +359,11 @@ export function layersPanel(app: App): HTMLElement {
           saveViewPrefs(l);
           app.mapView.renderUsers(app.engine);
         }),
+        checkField('Active users larger', () => l.userActiveLarger, (v) => {
+          l.userActiveLarger = v;
+          saveViewPrefs(l);
+          app.mapView.renderUsers(app.engine);
+        }, 'Users in a call or data session are drawn larger than idle ones; off = every user the same size'),
         selectField('User colours', USER_COLORS, () => l.userColor, (v) => {
           l.userColor = v;
           saveViewPrefs(l);
