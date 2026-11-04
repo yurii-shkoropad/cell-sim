@@ -27,9 +27,13 @@ export const WIFI_COLOR = '#7b5cd6';
 
 const WIFI_SVG = '<svg viewBox="0 0 16 16"><path d="M1.8 6.2a9 9 0 0 1 12.4 0M4.3 8.8a5.4 5.4 0 0 1 7.4 0M6.6 11.3a2 2 0 0 1 2.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="13.4" r="1.2" fill="currentColor"/></svg>';
 
-/** Fill = state (idle / voice / data / over Wi-Fi / no service); outline = mobility; active users are larger. */
-function userStyle(u: SimUser, onWifi: boolean, k = 1): L.CircleMarkerOptions {
-  const fill = onWifi ? WIFI_COLOR : u.serving < 0 && !u.session ? '#000' : u.session?.kind === 'voice' ? '#1565c0' : u.session?.kind === 'data' ? '#2e7d32' : '#9e9e9e';
+/** Colours of the serving technology / band user-colour schemes. */
+export const TECH_USER_COLOR: Record<string, string> = { GSM: '#e67e22', LTE: '#1e88e5', NR: '#00a39b' };
+export const BAND_USER_COLORS = ['#e6194b', '#f58231', '#d4b000', '#3cb44b', '#4363d8', '#911eb4', '#42b4d4', '#f032e6', '#7a5c00', '#008080'];
+
+/** Fill = state (idle / voice / data / over Wi-Fi / no service) unless `fillOverride`; outline = mobility; active users are larger. */
+function userStyle(u: SimUser, onWifi: boolean, k = 1, fillOverride?: string): L.CircleMarkerOptions {
+  const fill = fillOverride ?? (onWifi ? WIFI_COLOR : u.serving < 0 && !u.session ? '#000' : u.session?.kind === 'voice' ? '#1565c0' : u.session?.kind === 'data' ? '#2e7d32' : '#9e9e9e');
   const stroke = u.mode === 'drive' ? '#222' : u.mode === 'static' ? '#f2b705' : '#fff';
   return { fillColor: fill, color: stroke, weight: (u.mode === 'static' ? 2 : 1) * Math.sqrt(k), radius: (u.session ? 5 : 3.5) * k };
 }
@@ -631,6 +635,31 @@ export class MapView {
     while (this.userLabels.length > k) this.userLabels.pop()!.m.remove();
   }
 
+  /** Bands of the network, lowest frequency first, each with its colour in the "serving band" user scheme. */
+  bandColors(): [string, string][] {
+    const f = new Map<string, number>();
+    for (const c of this.ctx?.cells ?? []) if (!(f.get(c.band)! <= c.freqMHz)) f.set(c.band, c.freqMHz);
+    return [...f.entries()].sort((a, b) => a[1] - b[1]).map(([b], i) => [b, BAND_USER_COLORS[i % BAND_USER_COLORS.length]]);
+  }
+
+  /** Fill of a user dot in the chosen scheme (Layers → User colours); undefined = activity colours. */
+  private userFill(u: SimUser, engine: SimEngine): string | undefined {
+    const scheme = this.store.layers.userColor;
+    if (scheme === 'state') return undefined;
+    if (engine.onWifi(u)) return WIFI_COLOR;
+    if (scheme === 'operator') return this.store.scenario.operators[u.opIdx]?.color ?? '#555';
+    const c = u.serving >= 0 ? this.ctx?.cells[u.serving] : undefined;
+    if (!c) return '#000';
+    if (scheme === 'cell') return this.cellColor(c);
+    if (scheme === 'tech') return TECH_USER_COLOR[c.tech];
+    return this.bandColorsCache().get(c.band) ?? '#555';
+  }
+  private bandCache: { ctx: RadioContext | null; v: Map<string, string> } = { ctx: null, v: new Map() };
+  private bandColorsCache(): Map<string, string> {
+    if (this.bandCache.ctx !== this.ctx) this.bandCache = { ctx: this.ctx, v: new Map(this.bandColors()) };
+    return this.bandCache.v;
+  }
+
   renderUsers(engine: SimEngine) {
     this.lastEngine = engine;
     const lay = this.store.layers;
@@ -652,7 +681,7 @@ export class MapView {
         }
         (m as UserMarker).uid = u.id;
         m.setLatLng([u.lat, u.lng]);
-        const st = userStyle(u, engine.onWifi(u), lay.userSize);
+        const st = userStyle(u, engine.onWifi(u), lay.userSize, this.userFill(u, engine));
         m.setStyle(st);
         m.setRadius(st.radius!);
       }

@@ -1,7 +1,7 @@
 import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
-import { BUILDING_LEGEND } from '../../map/mapView';
+import { BUILDING_LEGEND, TECH_USER_COLOR, WIFI_COLOR } from '../../map/mapView';
 import { RSRP_PALETTES } from '../../map/colors';
-import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES, SITE_NAME_SIZES, USER_LABEL_FIELDS, USER_SIZES } from '../../state/store';
+import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES, SITE_NAME_SIZES, USER_COLORS, USER_LABEL_FIELDS, USER_SIZES } from '../../state/store';
 import { TECHS, type CalibratedModel, type CaSettings, type RadioSettings, type Tech, type TechThresholds } from '../../types';
 import { CAL_REF_M } from '../../radio/cells';
 import { ENV_RADIUS_M } from '../../radio/buildings';
@@ -359,6 +359,12 @@ export function layersPanel(app: App): HTMLElement {
           saveViewPrefs(l);
           app.mapView.renderUsers(app.engine);
         }),
+        selectField('User colours', USER_COLORS, () => l.userColor, (v) => {
+          l.userColor = v;
+          saveViewPrefs(l);
+          app.mapView.renderUsers(app.engine);
+          render(); // legend below
+        }, 'Fill of the user dots; the outline always shows mobility, active users are drawn larger'),
         h('div', { class: 'field', title: 'Label next to each user, framed in its serving cell’s colour' },
           h('span', { class: 'lbl' }, 'User labels (from zoom 15)'),
           h('span', { class: 'ctl label-fields' }, ...USER_LABEL_FIELDS.map(([k, label, title]) => {
@@ -392,11 +398,21 @@ export function layersPanel(app: App): HTMLElement {
           ? h('div', { class: 'legend-users' }, ...BUILDING_LEGEND.map(([max, c], i) => h('span', null, h('i', { style: `background:${c};border-radius:2px` }), i === BUILDING_LEGEND.length - 1 ? `≥ ${BUILDING_LEGEND[i - 1][0]} m` : `< ${max} m`)))
           : '',
         h('div', { class: 'legend-users' },
-          h('span', null, h('i', { style: 'background:#9e9e9e' }), 'idle'),
-          h('span', null, h('i', { style: 'background:#1565c0' }), 'voice'),
-          h('span', null, h('i', { style: 'background:#2e7d32' }), 'data'),
-          h('span', null, h('i', { style: 'background:#7b5cd6' }), 'over Wi-Fi'),
-          h('span', null, h('i', { style: 'background:#000' }), 'no service'),
+          ...(() => {
+            const dot = (c: string, t: string) => h('span', null, h('i', { style: `background:${c}` }), t);
+            const common = [dot(WIFI_COLOR, 'over Wi-Fi'), dot('#000', 'no service')];
+            switch (l.userColor) {
+              case 'operator': return [...store.scenario.operators.map((o) => dot(o.color, o.name)), dot(WIFI_COLOR, 'over Wi-Fi')];
+              case 'tech': return [dot(TECH_USER_COLOR.GSM, '2G'), dot(TECH_USER_COLOR.LTE, '4G'), dot(TECH_USER_COLOR.NR, '5G'), ...common];
+              case 'band': {
+                const bands = app.mapView.bandColors();
+                if (!bands.length && store.scenario.stations.length) setTimeout(render, 300); // radio context not built yet (page load)
+                return [...bands.map(([b, c]) => dot(c, b)), ...common];
+              }
+              case 'cell': return [h('span', null, 'colour of the serving cell (its sector and link lines)'), ...common];
+              default: return [dot('#9e9e9e', 'idle'), dot('#1565c0', 'voice'), dot('#2e7d32', 'data'), ...common];
+            }
+          })(),
           h('span', null, h('i', { style: 'background:#fff;border:2px solid #222' }), 'vehicle'),
           h('span', null, h('i', { style: 'background:#fff;border:2px solid #f2b705' }), 'static'),
           h('span', null, h('i', { style: 'background:#fff;border:2px solid #2a78d6' }), 'selected in Users list'),
