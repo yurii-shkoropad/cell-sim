@@ -254,7 +254,7 @@ export class UserInspector {
   }
 
   /** Carrier aggregation: PCell + SCells with what each carries. */
-  private caRow(u: SimUser, kv: (k: string, v: string, cls?: string) => HTMLElement): HTMLElement | string {
+  private caRow(u: SimUser, kv: (k: string, v: string, cls?: string, hint?: string) => HTMLElement): HTMLElement | string {
     const ca = this.app.store.scenario.settings.ca;
     const ctx = this.app.ctx();
     if (!ca.enabled || u.serving < 0 || ctx.cells[u.serving].tech === 'GSM') return '';
@@ -267,7 +267,7 @@ export class UserInspector {
     }
     const scThr = u.scellThr.reduce((a, b) => a + b, 0);
     const parts = u.scells.map((i, k) => `${ctx.cells[i].name} ${ctx.cells[i].freqMHz} MHz, SINR ${fmt(u.scellSinr[k], 1)} dB, ${fmt(u.scellThr[k], 1)} Mbps`);
-    return kv('Carrier aggr.', `${1 + u.scells.length} CC · PCell ${fmt(u.thrMbps - scThr, 1)} Mbps + ${parts.join(' + ')}`);
+    return kv('Carrier aggr.', `${1 + u.scells.length} CC · PCell ${fmt(u.thrMbps - scThr, 1)} Mbps + ${parts.join(' + ')}`, '', 'Delivered now on each carrier, after sharing with other users; the sum is the throughput. Alone on all of them it equals the “CA peak” map label.');
   }
 
   /** Other carriers of the PCell's RAT and why each is (not) aggregated. */
@@ -359,7 +359,8 @@ export class UserInspector {
     const c = u.serving >= 0 ? ctx.cells[u.serving] : null;
     const th = c ? store.scenario.settings.thresholds[c.tech] : null;
     const s = u.session;
-    const kv = (k: string, v: string, cls = '') => h('div', { class: `kv ${cls}` }, h('span', null, k), h('b', null, v));
+    // `hint`: a short grey line under the value saying what the number means.
+    const kv = (k: string, v: string, cls = '', hint?: string) => h('div', { class: `kv ${cls}` }, h('span', null, k), hint ? h('div', null, h('b', null, v), h('div', { class: 'kv-hint' }, hint)) : h('b', null, v));
     const state = s
       ? `${s.kind} · ${fmtTime(engine.t - s.start)} elapsed${Number.isFinite(s.end) ? ` · ${fmtTime(Math.max(0, s.end - engine.t))} left` : ' · continuous'}`
       : u.serving < 0 ? 'no service' : 'idle (camped)';
@@ -402,9 +403,9 @@ export class UserInspector {
         kv('Carrier', c ? (c.tech === 'GSM' ? `${c.freqMHz} MHz · 200 kHz · ${c.tch} TCH` : `${c.freqMHz} MHz · ${c.rbs} RB (${fmt(c.occBwMHz, 1)} MHz used)`) : '—'),
         this.caRow(u, kv),
         kv('Scheduler', c && c.tech !== 'GSM' ? `${schedulerInfo(engine.cellScheduler(u.serving))?.label} · cell load ${Math.round(engine.cells[u.serving].load * 100)}%` : '—'),
-        kv('Max possible', c ? maxPossible(c, engine.ueRx(u), store.scenario.settings.radio.overhead) : '—'),
-        kv('Peak here', c && c.tech !== 'GSM' ? `${fmt(peakRateMbps(c, u.sinr, store.scenario.settings.radio, engine.ueRx(u)), 1)} Mbps (alone in the cell)` : '—'),
-        kv('Throughput', (s?.kind === 'data' ? `${fmt(u.thrMbps, 2)} of ${fmt(s.demandMbps, 2)} Mbps` : s ? `${fmt(u.thrMbps * 1000, 0)} kbps (GBR)` : '—') + (engine.onWifi(u) ? ' · over Wi-Fi' : '')),
+        kv('Max possible', c ? maxPossible(c, engine.ueRx(u), store.scenario.settings.radio.overhead) : '—', '', 'Upper limit of the serving carrier only: best modulation on every layer whatever the SINR, no other users, no carrier aggregation.'),
+        kv('Peak here', c && c.tech !== 'GSM' ? `${fmt(peakRateMbps(c, u.sinr, store.scenario.settings.radio, engine.ueRx(u)), 1)} Mbps (alone in the cell)` : '—', '', c && c.tech !== 'GSM' ? 'Serving carrier at this SINR, alone in the cell; other users on it lower the share, extra carriers (CA) add to it.' : undefined),
+        kv('Throughput', (s?.kind === 'data' ? `${fmt(u.thrMbps, 2)} of ${fmt(s.demandMbps, 2)} Mbps` : s ? `${fmt(u.thrMbps * 1000, 0)} kbps (GBR)` : '—') + (engine.onWifi(u) ? ' · over Wi-Fi' : ''), '', s?.kind === 'data' ? 'Delivered now (all carriers) of what the session asks for; a very high demand means “take everything the network gives”.' : undefined),
         kv('HO candidate', u.hoCand >= 0 && ctx.cells[u.hoCand] && c ? `${ctx.cells[u.hoCand].name}, TTT ${Math.max(0, u.hoTimerMs).toFixed(0)}/${engine.hoParams(u.serving).tttMs} ms` : u.hoTimerMs < 0 ? `back-off ${(-u.hoTimerMs).toFixed(0)} ms` : '—'),
         kv('RLF timer', u.rlfTimerMs > 0 ? `${u.rlfTimerMs.toFixed(0)}/${th?.rlfTimerMs ?? 0} ms` : '—', u.rlfTimerMs > 0 ? 'bad' : ''),
       ),

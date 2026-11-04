@@ -370,6 +370,7 @@ export function layersPanel(app: App): HTMLElement {
             return h('label', { title }, cb, label);
           })),
         ),
+        h('p', { class: 'hint' }, 'Peak: the serving carrier at the user’s SINR, as if alone in the cell. CA peak: the same summed over every aggregated carrier (e.g. “CA 3CC 89.8 Mbps”). The user inspector shows what is actually delivered now.'),
         checkField('Wi-Fi APs and association range', () => l.showWifi, (v) => {
           l.showWifi = v;
           app.mapView.renderWifi();
