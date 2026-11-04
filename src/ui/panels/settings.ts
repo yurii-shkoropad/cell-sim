@@ -1,7 +1,7 @@
 import { SCHEDULERS, schedulerInfo } from '../../sim/scheduler';
 import { BUILDING_LEGEND, TECH_USER_COLOR, WIFI_COLOR } from '../../map/mapView';
 import { RSRP_PALETTES } from '../../map/colors';
-import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES, SITE_NAME_SIZES, USER_COLORS, USER_LABEL_FIELDS, USER_SIZES } from '../../state/store';
+import { saveViewPrefs, SECTOR_PALETTES, SITE_BADGES, SITE_NAME_SIZES, USER_COLORS, USER_FIXED_COLORS, USER_LABEL_FIELDS, USER_SIZES } from '../../state/store';
 import { TECHS, type CalibratedModel, type CaSettings, type RadioSettings, type Tech, type TechThresholds } from '../../types';
 import { CAL_REF_M } from '../../radio/cells';
 import { ENV_RADIUS_M } from '../../radio/buildings';
@@ -365,6 +365,18 @@ export function layersPanel(app: App): HTMLElement {
           app.mapView.renderUsers(app.engine);
           render(); // legend below
         }, 'Fill of the user dots; the outline always shows mobility, active users are drawn larger'),
+        l.userColor === 'fixed'
+          ? h('div', { class: 'field' },
+              h('span', { class: 'lbl' }, 'User colour'),
+              h('span', { class: 'ctl swatches' }, ...USER_FIXED_COLORS.map((c) =>
+                h('button', { type: 'button', class: `swatch ${l.userFixedColor === c ? 'on' : ''}`, style: `--c:${c}`, title: c, onclick: () => {
+                  l.userFixedColor = c;
+                  saveViewPrefs(l);
+                  app.mapView.renderUsers(app.engine);
+                  render();
+                } }))),
+            )
+          : '',
         h('div', { class: 'field', title: 'Label next to each user, framed in its serving cell’s colour' },
           h('span', { class: 'lbl' }, 'User labels (from zoom 15)'),
           h('span', { class: 'ctl label-fields' }, ...USER_LABEL_FIELDS.map(([k, label, title]) => {
@@ -410,6 +422,7 @@ export function layersPanel(app: App): HTMLElement {
                 return [...bands.map(([b, c]) => dot(c, b)), ...common];
               }
               case 'cell': return [h('span', null, 'colour of the serving cell (its sector and link lines)'), ...common];
+              case 'fixed': return [];
               default: return [dot('#9e9e9e', 'idle'), dot('#1565c0', 'voice'), dot('#2e7d32', 'data'), ...common];
             }
           })(),

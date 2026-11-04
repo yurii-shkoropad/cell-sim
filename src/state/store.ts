@@ -29,6 +29,8 @@ export interface LayerState {
   showReadout: boolean;
   /** What the user dots' fill shows (outline = mobility in every scheme). */
   userColor: UserColor;
+  /** The colour of every user with "One colour for all users" (one of USER_FIXED_COLORS). */
+  userFixedColor: string;
   /** User marker size: scale of the dots (1 = normal). */
   userSize: number;
   /** What a site marker shows: its bands, or RATs with carrier counts. */
@@ -48,8 +50,10 @@ export type SiteBadge = 'bands' | 'rat' | 'none';
 export const SITE_BADGES: [SiteBadge, string][] = [['bands', 'Bands (e.g. B1 B3 B20)'], ['rat', 'Technology & carrier count (4G ×6)'], ['none', 'Nothing (plain marker)']];
 export const SITE_NAME_SIZES: [string, string][] = [['11', 'Small (11 px)'], ['14', 'Medium (14 px)'], ['18', 'Large (18 px)'], ['24', 'Extra large (24 px)'], ['32', 'Huge (32 px, for slides)']];
 export const USER_SIZES: [string, string][] = [['1', 'Normal'], ['1.6', 'Large'], ['2.2', 'Extra large'], ['3', 'Huge (for slides)']];
-export type UserColor = 'state' | 'cell' | 'operator' | 'tech' | 'band';
-export const USER_COLORS: [UserColor, string][] = [['state', 'Activity (idle / voice / data / Wi-Fi)'], ['cell', 'Serving cell colour (as its links)'], ['operator', 'Operator colour'], ['tech', 'Serving technology (2G / 4G / 5G)'], ['band', 'Serving band']];
+export type UserColor = 'state' | 'cell' | 'operator' | 'tech' | 'band' | 'fixed';
+export const USER_COLORS: [UserColor, string][] = [['state', 'Activity (idle / voice / data / Wi-Fi)'], ['cell', 'Serving cell colour (as its links)'], ['operator', 'Operator colour'], ['tech', 'Serving technology (2G / 4G / 5G)'], ['band', 'Serving band'], ['fixed', 'One colour for all users']];
+/** Colours offered for "One colour for all users". */
+export const USER_FIXED_COLORS = ['#2e7d32', '#1565c0', '#e53935', '#f39c12', '#8e44ad', '#16a2a6', '#e91e63', '#5d4037', '#212121', '#ffffff'];
 export interface UserLabelFields {
   level: boolean;
   sinr: boolean;
@@ -75,9 +79,9 @@ type Listener = () => void;
 const STORAGE_KEY = 'radio-sim.scenario.v1';
 const VIEW_PREFS_KEY = 'radio-sim.rsrp-look';
 
-type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel' | 'userSize' | 'showReadout' | 'userColor'>;
+type ViewPrefs = Pick<LayerState, 'rsrpPalette' | 'rsrpSmooth' | 'sectorPalette' | 'siteBadge' | 'showPci' | 'showSiteNames' | 'siteNameSize' | 'userLabel' | 'userSize' | 'showReadout' | 'userColor' | 'userFixedColor'>;
 
-const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: { level: false, sinr: false, mod: false, peak: false, ca: false }, userSize: 1, showReadout: true, userColor: 'state' });
+const defaultViewPrefs = (): ViewPrefs => ({ rsrpPalette: 'drive-test', rsrpSmooth: false, sectorPalette: 'operator', siteBadge: 'bands', showPci: false, showSiteNames: true, siteNameSize: 11, userLabel: { level: false, sinr: false, mod: false, peak: false, ca: false }, userSize: 1, showReadout: true, userColor: 'state', userFixedColor: USER_FIXED_COLORS[0] });
 
 const defaultLayers = (): Omit<LayerState, keyof ViewPrefs> => ({
   heatmap: 'rsrp',
@@ -106,6 +110,7 @@ function loadViewPrefs(): ViewPrefs {
       showSiteNames: v.showSiteNames !== false,
       showReadout: v.showReadout !== false,
       userColor: USER_COLORS.some(([k]) => k === v.userColor) ? v.userColor! : d.userColor,
+      userFixedColor: USER_FIXED_COLORS.includes(v.userFixedColor ?? '') ? v.userFixedColor! : d.userFixedColor,
       userSize: USER_SIZES.some(([k]) => +k === v.userSize) ? v.userSize! : d.userSize,
       userLabel: (() => {
         const x = v.userLabel as unknown;
@@ -124,7 +129,7 @@ function loadViewPrefs(): ViewPrefs {
 /** Remember the colour choices (heatmap and sectors) in this browser. */
 export function saveViewPrefs(l: LayerState) {
   try {
-    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames, siteNameSize: l.siteNameSize, userLabel: { ...l.userLabel }, userSize: l.userSize, showReadout: l.showReadout, userColor: l.userColor };
+    const prefs: ViewPrefs = { rsrpPalette: l.rsrpPalette, rsrpSmooth: l.rsrpSmooth, sectorPalette: l.sectorPalette, siteBadge: l.siteBadge, showPci: l.showPci, showSiteNames: l.showSiteNames, siteNameSize: l.siteNameSize, userLabel: { ...l.userLabel }, userSize: l.userSize, showReadout: l.showReadout, userColor: l.userColor, userFixedColor: l.userFixedColor };
     localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
   } catch {
     /* storage unavailable: the choice lasts for this session */

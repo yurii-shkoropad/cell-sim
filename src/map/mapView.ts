@@ -646,6 +646,7 @@ export class MapView {
   private userFill(u: SimUser, engine: SimEngine): string | undefined {
     const scheme = this.store.layers.userColor;
     if (scheme === 'state') return undefined;
+    if (scheme === 'fixed') return this.store.layers.userFixedColor;
     if (engine.onWifi(u)) return WIFI_COLOR;
     if (scheme === 'operator') return this.store.scenario.operators[u.opIdx]?.color ?? '#555';
     const c = u.serving >= 0 ? this.ctx?.cells[u.serving] : undefined;

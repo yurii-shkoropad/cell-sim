@@ -423,3 +423,6 @@ table.meas td.nowrap { white-space: nowrap; }
 .snap-name { font-weight: 600; padding: 2px 4px; display: flex; align-items: center; gap: 6px; }
 .snap-badge { flex: none; white-space: nowrap; margin-left: auto; font-size: 10px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
 .kv-hint { font-size: 10.5px; line-height: 1.35; color: var(--muted); font-weight: 400; margin-top: 1px; }
+.swatches { flex-wrap: wrap; gap: 5px; }
+.swatch { width: 20px; height: 20px; border-radius: 50%; background: var(--c); border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); padding: 0; cursor: pointer; }
+.swatch.on { box-shadow: 0 0 0 2px #1d1d1b; }
